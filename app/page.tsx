@@ -9,6 +9,7 @@ const primaryCtas = [
 const quickLinks = [
   { href: "/docs/canonicalization", label: "Canonicalization docs" },
   { href: "/faq", label: "FAQ" },
+  { href: "/dev-tools", label: "Dev Tools" },
 ];
 
 const featureCards = [
@@ -151,20 +152,21 @@ export default function Home() {
           </div>
         </section>
 
-        <footer className="flex flex-col gap-2 border-t border-white pt-6 text-sm text-gray-400 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-3">
-            <Link href="/contact" className="hover:text-white">Contact</Link>
-            <a
-              href="https://github.com/"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white"
+        <section className="rounded-lg border border-white bg-black p-8">
+          <div className="space-y-4 text-center">
+            <h2 className="text-xl font-bold text-white">Test it yourself</h2>
+            <p className="text-gray-300">
+              Use our developer tools to experiment with canonicalization and hash computation in real-time. 
+              See exactly how your content is transformed before hashing.
+            </p>
+            <Link
+              href="/dev-tools"
+              className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-black hover:bg-gray-200"
             >
-              Repo
-            </a>
+              Open Developer Tools →
+            </Link>
           </div>
-          <p className="text-xs">Proof-of-publish toolkit · Canonicalize → Hash → Sign → Verify</p>
-        </footer>
+        </section>
       </div>
     </main>
   );
