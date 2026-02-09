@@ -1,0 +1,80 @@
+{
+  "publications": [
+    {
+      "id": "1",
+      "title": "Introduction to Proof of Publish",
+      "contentType": "article",
+      "canonicalizedContent": "Proof of Publish: A Comprehensive Guide\n\nProof of publish is a cryptographic method for timestamping content on a blockchain.\nBy hashing content and registering it on-chain, we create an immutable record of when\nand by whom a piece of content was published.\n\nThis approach has several key advantages:\n- Immutable timestamping\n- Decentralized verification\n- Privacy-preserving (only hash is stored)\n- Version tracking through parent hashes",
+      "sourceUrl": "https://example.com/proof-of-publish-intro",
+      "publisherWallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
+      "contentHash": "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+      "txHash": "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
+      "blockTimestamp": "2026-02-02T08:01:18.206Z",
+      "status": "CONFIRMED",
+      "createdAt": "2026-02-02T08:01:18.206Z"
+    },
+    {
+      "id": "2",
+      "title": "Introduction to Proof of Publish (Updated)",
+      "contentType": "article",
+      "canonicalizedContent": "Proof of Publish: A Comprehensive Guide (v2)\n\nProof of publish is a cryptographic method for timestamping content on a blockchain.\nBy hashing content and registering it on-chain, we create an immutable record of when\nand by whom a piece of content was published.\n\nThis approach has several key advantages:\n- Immutable timestamping\n- Decentralized verification\n- Privacy-preserving (only hash is stored)\n- Version tracking through parent hashes\n- Cryptographic proof of authenticity\n\nUpdated to include additional benefits and use cases.",
+      "sourceUrl": "https://example.com/proof-of-publish-intro",
+      "publisherWallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
+      "contentHash": "0xdef4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "parentHash": "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+      "txHash": "0x2222333344445555666677778888999900001111aaaabbbbccccddddeeeeffff",
+      "blockTimestamp": "2026-02-07T08:01:18.206Z",
+      "status": "CONFIRMED",
+      "createdAt": "2026-02-07T08:01:18.206Z"
+    },
+    {
+      "id": "3",
+      "title": "Smart Contract Code Example",
+      "contentType": "code",
+      "canonicalizedContent": "pragma solidity ^0.8.0;\n\ncontract ProofOfPublish {\n    mapping(bytes32 => Publication) public publications;\n    \n    struct Publication {\n        address publisher;\n        uint256 timestamp;\n        bytes32 parentHash;\n    }\n    \n    function publish(bytes32 contentHash, bytes32 parentHash) external {\n        require(publications[contentHash].timestamp == 0, \"Already published\");\n        \n        publications[contentHash] = Publication({\n            publisher: msg.sender,\n            timestamp: block.timestamp,\n            parentHash: parentHash\n        });\n    }\n}",
+      "publisherWallet": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+      "contentHash": "0x3333444455556666777788889999aaaabbbbccccddddeeeeffffaaaa11112222",
+      "txHash": "0x3333444455556666777788889999aaaabbbbccccddddeeeeffffaaaa11112222",
+      "blockTimestamp": "2026-02-04T08:01:18.206Z",
+      "status": "CONFIRMED",
+      "createdAt": "2026-02-04T08:01:18.206Z"
+    },
+    {
+      "id": "4",
+      "title": "Research Paper Draft",
+      "contentType": "document",
+      "canonicalizedContent": "Decentralized Content Verification: A Novel Approach\n\nAbstract:\nThis paper presents a novel approach to content verification using blockchain technology\nand cryptographic hashing. We demonstrate how content can be timestamped and verified\nwithout revealing the content itself.\n\nIntroduction:\nContent authenticity and timestamping have become critical issues in the digital age.\nTraditional methods rely on centralized authorities, which introduce single points of\nfailure and trust requirements.\n\nMethodology:\nOur approach uses SHA-256 hashing combined with Ethereum smart contracts to create\nimmutable records of content publication. The system preserves privacy by storing only\nhashes on-chain while maintaining verifiability.\n\nResults:\nIn our experiments, we achieved 100% verification accuracy with average gas costs of\n21,000 gwei per publication.",
+      "sourceUrl": "https://example.com/research-paper",
+      "publisherWallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
+      "contentHash": "0x4444555566667777888899990000aaaabbbbccccddddeeeeffff1111222233",
+      "txHash": "0x4444555566667777888899990000aaaabbbbccccddddeeeeffff111122223344",
+      "blockTimestamp": "2026-02-06T08:01:18.206Z",
+      "status": "CONFIRMED",
+      "createdAt": "2026-02-06T08:01:18.206Z"
+    },
+    {
+      "id": "5",
+      "title": "Quick Note",
+      "contentType": "text",
+      "canonicalizedContent": "Remember to update the documentation with the new canonicalization rules.\n\nKey points:\n- Line ending normalization\n- Trailing whitespace removal\n- Unicode NFC normalization\n- Trim blank lines",
+      "publisherWallet": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+      "contentHash": "0x5555666677778888999900001111222233334444555566667777888899990000",
+      "txHash": "0x5555666677778888999900001111222233334444555566667777888899991111",
+      "blockTimestamp": "2026-02-08T08:01:18.206Z",
+      "status": "CONFIRMED",
+      "createdAt": "2026-02-08T08:01:18.206Z"
+    },
+    {
+      "id": "6",
+      "title": "Pending Publication",
+      "contentType": "article",
+      "canonicalizedContent": "This is a test publication that is still pending confirmation on the blockchain.\n\nThe transaction has been submitted but not yet confirmed.",
+      "publisherWallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
+      "contentHash": "0x6666777788889999aaaabbbbccccddddeeeeffff00001111222233334444555",
+      "txHash": "0x6666777788889999aaaabbbbccccddddeeeeffff00001111222233334444666",
+      "blockTimestamp": "2026-02-09T08:01:18.206Z",
+      "status": "PENDING",
+      "createdAt": "2026-02-09T08:01:18.206Z"
+    }
+  ]
+}

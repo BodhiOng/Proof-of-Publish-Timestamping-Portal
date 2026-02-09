@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 
 type Publication = {
   id: string;
@@ -14,32 +14,9 @@ type Publication = {
   parentHash?: string;
   txHash: string;
   blockTimestamp: string;
-  nextVersion?: string;
-  prevVersion?: string;
-};
-
-// Mock data - would come from API/blockchain
-const mockPublication: Publication = {
-  id: "1",
-  title: "Example Publication",
-  contentType: "article",
-  canonicalizedContent: `This is the canonicalized content of the publication.
-
-It has been normalized according to the following rules:
-- Line endings converted to \\n
-- Trailing whitespace removed
-- Unicode normalized to NFC form
-- Leading/trailing blank lines trimmed
-
-This ensures the hash remains consistent across platforms.`,
-  sourceUrl: "https://example.com/original",
-  publisherWallet: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
-  contentHash: "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
-  parentHash: "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
-  txHash: "0xdef4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-  blockTimestamp: new Date(Date.now() - 86400000).toISOString(),
-  prevVersion: "0",
-  nextVersion: "2",
+  status: string;
+  nextVersion?: string | null;
+  prevVersion?: string | null;
 };
 
 export default function PublicationDetailPage({
@@ -48,7 +25,77 @@ export default function PublicationDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const publication = mockPublication; // In real app, fetch based on id
+  const [publication, setPublication] = useState<Publication | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchPublication() {
+      try {
+        const response = await fetch(`/api/publications/${id}`);
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            setError("Publication not found");
+          } else {
+            setError("Failed to load publication");
+          }
+          setLoading(false);
+          return;
+        }
+
+        const data = await response.json();
+        setPublication(data);
+        setLoading(false);
+      } catch (err) {
+        setError("Failed to load publication");
+        setLoading(false);
+      }
+    }
+
+    fetchPublication();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-5xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Dashboard
+            </Link>
+          </div>
+          <div className="rounded-lg border border-white bg-black p-12 text-center">
+            <p className="text-gray-400">Loading publication...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !publication) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-5xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Dashboard
+            </Link>
+          </div>
+          <div className="rounded-lg border border-white bg-black p-12 text-center">
+            <h2 className="mb-4 text-2xl font-bold">Publication Not Found</h2>
+            <p className="mb-6 text-gray-400">{error || "The publication you're looking for doesn't exist."}</p>
+            <Link
+              href="/dashboard"
+              className="inline-block rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200"
+            >
+              Go to Dashboard
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
