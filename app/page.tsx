@@ -8,7 +8,6 @@ const primaryCtas = [
 
 const quickLinks = [
   { href: "/docs/canonicalization", label: "Canonicalization docs" },
-  { href: "/faq", label: "FAQ" },
   { href: "/dev-tools", label: "Dev Tools" },
 ];
 

@@ -40,7 +40,14 @@ export default function RootLayout({
               <Link href="/dashboard" className="hover:text-white hover:underline">Dashboard</Link>
               <Link href="/dev-tools" className="hover:text-white hover:underline">Dev Tools</Link>
               <Link href="/docs/canonicalization" className="hover:text-white hover:underline">Docs</Link>
-              <Link href="/faq" className="hover:text-white hover:underline">FAQ</Link>
+              <a
+                href="https://github.com/BodhiOng/Proof-of-Publish-Timestamping-Portal"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white hover:underline"
+              >
+                GitHub
+              </a>
               <Link href="/connect-wallet" className="rounded-full border border-white px-3 py-1 text-white hover:bg-white hover:text-black">Connect Wallet</Link>
             </nav>
           </div>
