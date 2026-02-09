@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useWallet } from "@/hooks/useWallet";
 
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
@@ -45,11 +46,11 @@ const mockPublications: Publication[] = [
 ];
 
 export default function DashboardPage() {
+  const { isConnected, address, isLoading, disconnect } = useWallet();
+  
   const [publications] = useState<Publication[]>(mockPublications);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<PublicationStatus | "ALL">("ALL");
-  const [walletAddress] = useState("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1");
-  const [walletConnected] = useState(true);
 
   const filteredPublications = publications.filter((pub) => {
     const matchesSearch = 
@@ -82,6 +83,78 @@ export default function DashboardPage() {
     a.click();
   };
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="mt-2 text-3xl font-bold">Dashboard</h1>
+          </div>
+          <div className="rounded-lg border border-white bg-black p-12 text-center">
+            <p className="text-gray-400">Loading...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Not connected state
+  if (!isConnected) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="mt-2 text-3xl font-bold">Dashboard</h1>
+            <p className="mt-1 text-sm text-gray-400">
+              Manage your publications and view version chains
+            </p>
+          </div>
+          
+          <div className="mx-auto max-w-2xl">
+            <div className="rounded-lg border border-white bg-black p-12 text-center">
+              <div className="mb-6">
+                <div className="mx-auto mb-4 h-16 w-16 rounded-full border-2 border-white bg-black p-4">
+                  <svg className="h-full w-full text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h2 className="mb-3 text-2xl font-bold">Wallet Connection Required</h2>
+                <p className="mb-6 text-gray-400">
+                  You need to connect your MetaMask wallet to view your publications dashboard. 
+                  Your publications are associated with your wallet address.
+                </p>
+              </div>
+              
+              <Link
+                href="/connect-wallet"
+                className="inline-block rounded-full bg-white px-8 py-3 font-bold text-black hover:bg-gray-200"
+              >
+                Connect MetaMask Wallet
+              </Link>
+
+              <div className="mt-6 rounded-lg border border-gray-700 bg-black p-4 text-left">
+                <h3 className="mb-2 text-sm font-bold">What you'll see after connecting:</h3>
+                <ul className="space-y-1 text-xs text-gray-400">
+                  <li>• All your published content proofs</li>
+                  <li>• Transaction status (pending, confirmed, failed)</li>
+                  <li>• Version chains and content lineage</li>
+                  <li>• Search and filter your publications</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
@@ -110,28 +183,30 @@ export default function DashboardPage() {
             {/* Wallet Info */}
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-lg font-bold">Wallet Status</h2>
-              {walletConnected ? (
-                <div className="space-y-3">
-                  <div>
-                    <p className="mb-1 text-xs text-gray-400">Connected Account</p>
-                    <code className="block truncate text-xs text-white">{walletAddress}</code>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-white"></div>
-                    <span className="text-xs font-bold">Connected</span>
-                  </div>
-                  <button className="w-full rounded border border-white bg-black px-4 py-2 text-xs font-bold text-white hover:bg-white hover:text-black">
+              <div className="space-y-3">
+                <div>
+                  <p className="mb-1 text-xs text-gray-400">Connected Account</p>
+                  <code className="block truncate text-xs text-white">{address}</code>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-white"></div>
+                  <span className="text-xs font-bold">Connected</span>
+                </div>
+                <div className="grid gap-2">
+                  <Link
+                    href="/connect-wallet"
+                    className="block w-full rounded border border-white bg-black px-4 py-2 text-center text-xs font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    Manage Wallet
+                  </Link>
+                  <button
+                    onClick={disconnect}
+                    className="w-full rounded border border-gray-700 bg-black px-4 py-2 text-xs font-bold text-white hover:border-white"
+                  >
                     Disconnect
                   </button>
                 </div>
-              ) : (
-                <Link
-                  href="/connect-wallet"
-                  className="block w-full rounded bg-white px-4 py-2 text-center text-xs font-bold text-black hover:bg-gray-200"
-                >
-                  Connect Wallet
-                </Link>
-              )}
+              </div>
             </div>
 
             {/* Stats */}

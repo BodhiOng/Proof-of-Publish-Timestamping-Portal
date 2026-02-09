@@ -1,40 +1,182 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { BrowserProvider } from "ethers";
+
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
 
 export default function ConnectWalletPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
-  const [network, setNetwork] = useState<string>("Ethereum Mainnet");
+  const [network, setNetwork] = useState<string>("");
+  const [chainId, setChainId] = useState<string>("");
   const [wrongNetwork, setWrongNetwork] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [balance, setBalance] = useState<string>("");
+
+  // Check if wallet is already connected on page load
+  useEffect(() => {
+    checkIfWalletIsConnected();
+    
+    // Listen for account changes
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      window.ethereum.on('chainChanged', handleChainChanged);
+    }
+
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+      }
+    };
+  }, []);
+
+  const checkIfWalletIsConnected = async () => {
+    if (!window.ethereum) return;
+
+    try {
+      const provider = new BrowserProvider(window.ethereum);
+      const accounts = await provider.listAccounts();
+      
+      if (accounts.length > 0) {
+        const account = accounts[0];
+        setConnectedWallet(account.address);
+        await updateNetworkInfo(provider);
+        await updateBalance(provider, account.address);
+      }
+    } catch (err) {
+      console.error("Error checking wallet connection:", err);
+    }
+  };
+
+  const handleAccountsChanged = (accounts: string[]) => {
+    if (accounts.length === 0) {
+      disconnect();
+    } else {
+      setConnectedWallet(accounts[0]);
+      checkIfWalletIsConnected();
+    }
+  };
+
+  const handleChainChanged = () => {
+    window.location.reload();
+  };
+
+  const updateNetworkInfo = async (provider: BrowserProvider) => {
+    try {
+      const network = await provider.getNetwork();
+      const chainIdNum = Number(network.chainId);
+      setChainId(chainIdNum.toString());
+
+      // Map chain IDs to network names
+      const networkNames: { [key: number]: string } = {
+        1: "Ethereum Mainnet",
+        5: "Goerli Testnet",
+        11155111: "Sepolia Testnet",
+        137: "Polygon Mainnet",
+        80001: "Polygon Mumbai",
+        1337: "Localhost",
+      };
+
+      const networkName = networkNames[chainIdNum] || `Chain ID: ${chainIdNum}`;
+      setNetwork(networkName);
+
+      // Check if wrong network (for this example, we accept any network)
+      // You can add specific network requirements here
+      setWrongNetwork(false);
+    } catch (err) {
+      console.error("Error getting network info:", err);
+    }
+  };
+
+  const updateBalance = async (provider: BrowserProvider, address: string) => {
+    try {
+      const balanceWei = await provider.getBalance(address);
+      const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
+      setBalance(balanceEth);
+    } catch (err) {
+      console.error("Error getting balance:", err);
+    }
+  };
 
   const connectMetaMask = async () => {
+    if (!window.ethereum) {
+      setError("MetaMask is not installed. Please install MetaMask browser extension.");
+      return;
+    }
+
     setIsConnecting(true);
-    // Simulate wallet connection
-    setTimeout(() => {
-      setConnectedWallet("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1");
+    setError("");
+
+    try {
+      const provider = new BrowserProvider(window.ethereum);
+      
+      // Request account access
+      const accounts = await provider.send("eth_requestAccounts", []);
+      
+      if (accounts.length > 0) {
+        setConnectedWallet(accounts[0]);
+        await updateNetworkInfo(provider);
+        await updateBalance(provider, accounts[0]);
+      }
+    } catch (err: any) {
+      console.error("Error connecting to MetaMask:", err);
+      if (err.code === 4001) {
+        setError("Connection rejected. Please approve the connection request in MetaMask.");
+      } else {
+        setError("Failed to connect to MetaMask. Please try again.");
+      }
+    } finally {
       setIsConnecting(false);
-      setWrongNetwork(Math.random() > 0.7); // Randomly simulate wrong network
-    }, 1000);
+    }
   };
 
-  const connectWalletConnect = async () => {
-    setIsConnecting(true);
-    setTimeout(() => {
-      setConnectedWallet("0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063");
-      setIsConnecting(false);
-    }, 1500);
+
+
+  const switchNetwork = async () => {
+    if (!window.ethereum) return;
+
+    try {
+      // Try to switch to Ethereum Mainnet
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x1' }], // 0x1 = Ethereum Mainnet
+      });
+      setWrongNetwork(false);
+    } catch (err: any) {
+      console.error("Error switching network:", err);
+      if (err.code === 4902) {
+        setError("Network not added to MetaMask. Please add it manually.");
+      } else {
+        setError("Failed to switch network. Please change it manually in MetaMask.");
+      }
+    }
   };
 
-  const switchNetwork = () => {
-    setWrongNetwork(false);
-    setNetwork("Ethereum Mainnet");
-  };
-
-  const disconnect = () => {
-    setConnectedWallet(null);
-    setWrongNetwork(false);
+  const disconnect = async () => {
+    try {
+      if (window.ethereum) {
+        await window.ethereum.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      }
+    } catch (err) {
+      console.error("Error revoking wallet permissions:", err);
+    } finally {
+      setConnectedWallet(null);
+      setNetwork("");
+      setChainId("");
+      setBalance("");
+      setWrongNetwork(false);
+      setError("");
+    }
   };
 
   return (
@@ -51,51 +193,62 @@ export default function ConnectWalletPage() {
           </p>
         </div>
 
+        {/* Error Display */}
+        {error && (
+          <div className="mb-6 rounded-lg border border-white bg-black p-4">
+            <p className="text-sm font-bold text-white">⚠ {error}</p>
+          </div>
+        )}
+
         {!connectedWallet ? (
           <div className="space-y-6">
-            {/* Connection Methods */}
+            {/* Connection Method */}
             <div className="rounded-lg border border-white bg-black p-6">
-              <h2 className="mb-4 text-xl font-bold">Choose Connection Method</h2>
-              <div className="space-y-3">
-                <button
-                  onClick={connectMetaMask}
-                  disabled={isConnecting}
-                  className="flex w-full items-center justify-between rounded border border-white bg-black p-4 text-left hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
-                >
-                  <div>
-                    <p className="font-bold">MetaMask</p>
-                    <p className="text-xs text-gray-400">Connect using MetaMask browser extension</p>
-                  </div>
-                  <span className="text-2xl">→</span>
-                </button>
-
-                <button
-                  onClick={connectWalletConnect}
-                  disabled={isConnecting}
-                  className="flex w-full items-center justify-between rounded border border-white bg-black p-4 text-left hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
-                >
-                  <div>
-                    <p className="font-bold">WalletConnect</p>
-                    <p className="text-xs text-gray-400">Scan QR code with your mobile wallet</p>
-                  </div>
-                  <span className="text-2xl">→</span>
-                </button>
-              </div>
+              <h2 className="mb-4 text-xl font-bold">Connect MetaMask</h2>
+              <button
+                onClick={connectMetaMask}
+                disabled={isConnecting || (typeof window !== "undefined" && !window.ethereum)}
+                className="w-full rounded bg-white px-6 py-4 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
+              >
+                {isConnecting 
+                  ? "Connecting..." 
+                  : typeof window !== "undefined" && !window.ethereum
+                    ? "MetaMask Not Installed"
+                    : "Connect MetaMask"
+                }
+              </button>
 
               {isConnecting && (
                 <div className="mt-4 rounded border border-gray-700 bg-black p-4 text-center">
-                  <p className="text-sm text-gray-400">Connecting...</p>
+                  <p className="text-sm text-gray-400">Please check MetaMask and approve the connection request</p>
                 </div>
               )}
             </div>
 
-            {/* Backend Signing Warning */}
+            {/* MetaMask Installation */}
+            {typeof window !== "undefined" && !window.ethereum && (
+              <div className="rounded-lg border border-white bg-black p-6">
+                <h3 className="mb-2 text-sm font-bold">MetaMask Not Detected</h3>
+                <p className="mb-4 text-xs text-gray-400">
+                  MetaMask is required to connect your wallet. Install the browser extension to continue.
+                </p>
+                <a
+                  href="https://metamask.io/download/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded bg-white px-4 py-2 text-sm font-bold text-black hover:bg-gray-200"
+                >
+                  Install MetaMask →
+                </a>
+              </div>
+            )}
+
+            {/* Backend Signing Info */}
             <div className="rounded-lg border border-gray-700 bg-black p-6">
-              <h3 className="mb-2 text-sm font-bold">⚠ About Backend Signing</h3>
+              <h3 className="mb-2 text-sm font-bold">💡 About Wallet Connection</h3>
               <p className="text-xs text-gray-400">
-                While we support backend signing for convenience, it means our server controls the private key. 
-                For maximum security and true ownership, always use your own wallet (MetaMask or WalletConnect). 
-                Backend signing should only be used for testing or non-critical content.
+                Connecting your wallet gives you full control and ownership. Your private keys never leave your device.
+                You'll use your wallet to sign transactions and prove ownership of your publications.
               </p>
             </div>
 
@@ -125,7 +278,7 @@ export default function ConnectWalletPage() {
               <div className="space-y-3 text-sm">
                 <div>
                   <p className="mb-1 font-bold text-gray-400">Wallet Address</p>
-                  <code className="block rounded border border-gray-700 bg-black p-3 text-white">
+                  <code className="block break-all rounded border border-gray-700 bg-black p-3 font-mono text-xs text-white">
                     {connectedWallet}
                   </code>
                 </div>
@@ -133,7 +286,17 @@ export default function ConnectWalletPage() {
                 <div>
                   <p className="mb-1 font-bold text-gray-400">Network</p>
                   <p className="text-white">{network}</p>
+                  {chainId && (
+                    <p className="text-xs text-gray-400">Chain ID: {chainId}</p>
+                  )}
                 </div>
+
+                {balance && (
+                  <div>
+                    <p className="mb-1 font-bold text-gray-400">Balance</p>
+                    <p className="text-white">{balance} ETH</p>
+                  </div>
+                )}
               </div>
             </div>
 

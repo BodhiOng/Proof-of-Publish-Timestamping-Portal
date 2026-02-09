@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useWallet } from "@/hooks/useWallet";
 
 type ContentType = "text" | "article" | "code" | "document";
 type PublishStatus = "idle" | "previewing" | "signing" | "pending" | "confirmed" | "failed";
 
 export default function PublishPage() {
+  const { isConnected, address, isLoading } = useWallet();
+  
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [contentType, setContentType] = useState<ContentType>("text");
   const [sourceUrl, setSourceUrl] = useState("");
   const [parentHash, setParentHash] = useState("");
-  const [useWallet, setUseWallet] = useState(true);
   
   const [status, setStatus] = useState<PublishStatus>("idle");
   const [canonicalizedContent, setCanonicalizedContent] = useState("");
@@ -74,6 +76,78 @@ export default function PublishPage() {
     navigator.clipboard.writeText(text);
   };
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="mt-2 text-3xl font-bold">Publish Content</h1>
+          </div>
+          <div className="rounded-lg border border-white bg-black p-12 text-center">
+            <p className="text-gray-400">Loading...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Not connected state
+  if (!isConnected) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="mt-2 text-3xl font-bold">Publish Content</h1>
+            <p className="mt-1 text-sm text-gray-400">
+              Create a new proof-of-publish on-chain record
+            </p>
+          </div>
+          
+          <div className="mx-auto max-w-2xl">
+            <div className="rounded-lg border border-white bg-black p-12 text-center">
+              <div className="mb-6">
+                <div className="mx-auto mb-4 h-16 w-16 rounded-full border-2 border-white bg-black p-4">
+                  <svg className="h-full w-full text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h2 className="mb-3 text-2xl font-bold">Wallet Connection Required</h2>
+                <p className="mb-6 text-gray-400">
+                  You need to connect your MetaMask wallet to publish content on-chain. 
+                  This ensures you have ownership and can sign transactions.
+                </p>
+              </div>
+              
+              <Link
+                href="/connect-wallet"
+                className="inline-block rounded-full bg-white px-8 py-3 font-bold text-black hover:bg-gray-200"
+              >
+                Connect MetaMask Wallet
+              </Link>
+
+              <div className="mt-6 rounded-lg border border-gray-700 bg-black p-4 text-left">
+                <h3 className="mb-2 text-sm font-bold">Why do I need to connect?</h3>
+                <ul className="space-y-1 text-xs text-gray-400">
+                  <li>• Sign transactions to register content hashes on-chain</li>
+                  <li>• Prove authorship and timestamp of publications</li>
+                  <li>• Maintain full custody of your cryptographic identity</li>
+                  <li>• No content is uploaded - only hashes are stored</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
@@ -87,6 +161,10 @@ export default function PublishPage() {
             <p className="mt-1 text-sm text-gray-400">
               Create a new proof-of-publish on-chain record
             </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Connected Wallet</p>
+            <code className="text-xs text-white">{address?.slice(0, 6)}...{address?.slice(-4)}</code>
           </div>
         </div>
 
@@ -180,23 +258,6 @@ export default function PublishPage() {
                 </p>
               </div>
 
-              {/* Signing Method Toggle */}
-              <div className="rounded border border-gray-700 bg-black p-4">
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={useWallet}
-                    onChange={(e) => setUseWallet(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-sm">
-                    <span className="font-bold">Sign with wallet</span>
-                    <span className="block text-xs text-gray-400">
-                      Uncheck to use backend signing (less secure)
-                    </span>
-                  </span>
-                </label>
-              </div>
             </div>
 
             {/* Action Buttons */}
