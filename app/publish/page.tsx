@@ -12,6 +12,8 @@ import {
 
 type ContentType = "text" | "article" | "code" | "document" | "image" | "audio" | "video";
 
+const INLINE_FILE_PREVIEW_LIMIT_BYTES = 8 * 1024 * 1024;
+
 const CODE_EXTENSIONS = new Set([
   ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".php", ".rb", ".sol", ".json", ".xml", ".html", ".css", ".scss", ".sh", ".bat", ".ps1", ".md",
 ]);
@@ -217,7 +219,7 @@ export default function PublishPage() {
     setUploadProgress(0);
 
     try {
-      const readFileWithProgress = <T,>(mode: "text" | "arrayBuffer") => new Promise<T>((resolve, reject) => {
+      const readFileWithProgress = <T,>(mode: "text" | "arrayBuffer" | "dataUrl") => new Promise<T>((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error("Failed to read uploaded file"));
         reader.onload = () => resolve(reader.result as T);
@@ -231,8 +233,10 @@ export default function PublishPage() {
 
         if (mode === "text") {
           reader.readAsText(file);
-        } else {
+        } else if (mode === "arrayBuffer") {
           reader.readAsArrayBuffer(file);
+        } else {
+          reader.readAsDataURL(file);
         }
       });
 
@@ -260,11 +264,17 @@ export default function PublishPage() {
           .map((value) => value.toString(16).padStart(2, "0"))
           .join("");
 
+        let previewDataUrl = "";
+        if (file.size <= INLINE_FILE_PREVIEW_LIMIT_BYTES) {
+          previewDataUrl = await readFileWithProgress<string>("dataUrl");
+        }
+
         fileContent = [
           `FILE:${file.name}`,
           `TYPE:${file.type || "application/octet-stream"}`,
           `SIZE:${file.size}`,
           `SHA256:0x${hashHex}`,
+          ...(previewDataUrl ? [`DATAURL:${previewDataUrl}`] : []),
         ].join("\n");
       }
 

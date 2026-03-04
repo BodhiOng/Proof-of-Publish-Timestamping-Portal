@@ -20,6 +20,46 @@ type Publication = {
   prevVersion?: string | null;
 };
 
+type ParsedFileDescriptor = {
+  fileName?: string;
+  mimeType?: string;
+  sizeText?: string;
+  sha256?: string;
+  dataUrl?: string;
+};
+
+function parseFileDescriptor(content: string): ParsedFileDescriptor {
+  const fileName = content.match(/FILE:(.+)/)?.[1]?.trim();
+  const mimeType = content.match(/TYPE:(.+)/)?.[1]?.trim();
+  const sizeText = content.match(/SIZE:(\d+)/)?.[1]?.trim();
+  const sha256 = content.match(/SHA256:(0x[a-fA-F0-9]+)/)?.[1]?.trim();
+  const dataUrl = content.match(/DATAURL:(data:[^\n]+)/)?.[1]?.trim();
+
+  return { fileName, mimeType, sizeText, sha256, dataUrl };
+}
+
+function formatBytes(sizeText?: string): string {
+  if (!sizeText) return "";
+  const size = Number.parseInt(sizeText, 10);
+  if (Number.isNaN(size)) return "";
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = size;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function maskHash(value: string): string {
+  if (!value) return "";
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 10)}...${value.slice(-8)}`;
+}
+
 export default function PublicationDetailPage({
   params,
 }: {
@@ -91,39 +131,15 @@ export default function PublicationDetailPage({
     navigator.clipboard.writeText(text);
   };
 
-  const downloadProofPackage = () => {
-    const proofPackage = {
-      publication: {
-        id: publication.id,
-        title: publication.title,
-        contentType: publication.contentType,
-        publisherWallet: publication.publisherWallet,
-        contentHash: publication.contentHash,
-        parentHash: publication.parentHash,
-        txHash: publication.txHash,
-        blockTimestamp: publication.blockTimestamp,
-      },
-      canonicalizedContent: publication.canonicalizedContent,
-      canonicalizationSteps: [
-        "1. Convert line endings to \\n",
-        "2. Remove trailing whitespace from each line",
-        "3. Normalize Unicode to NFC",
-        "4. Trim leading/trailing blank lines",
-      ],
-      verificationInstructions: "Hash the canonicalizedContent using SHA-256 and compare with contentHash",
-    };
-
-    const blob = new Blob([JSON.stringify(proofPackage, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `proof-package-${publication.id}.json`;
-    a.click();
-  };
+  const parsedFile = parseFileDescriptor(publication.canonicalizedContent);
+  const hasFileDescriptor = Boolean(parsedFile.fileName && parsedFile.mimeType);
+  const canonicalizedContentDisplay = publication.canonicalizedContent
+    .replace(/\n?DATAURL:data:[^\n]+/g, "")
+    .trim();
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <div className="mx-auto max-w-5xl px-6 py-12 lg:px-12">
+      <div className="mx-auto max-w-6xl px-6 py-12 lg:px-12">
         {/* Header */}
         <div className="mb-8 border-b border-white pb-6">
           <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white">
@@ -135,16 +151,86 @@ export default function PublicationDetailPage({
           </p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[1fr_350px]">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,2fr)_360px]">
           {/* Main Content */}
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+            {/* Uploaded File Preview */}
+            {hasFileDescriptor && (
+              <div className="rounded-lg border border-white bg-black p-6">
+                <h2 className="mb-4 text-xl font-bold">Uploaded File Preview</h2>
+
+                <div className="mb-4 rounded border border-gray-700 bg-black p-4 text-sm">
+                  <p className="text-white"><span className="font-bold text-gray-400">Name:</span> {parsedFile.fileName}</p>
+                  <p className="text-white"><span className="font-bold text-gray-400">Type:</span> {parsedFile.mimeType}</p>
+                  {parsedFile.sizeText && (
+                    <p className="text-white"><span className="font-bold text-gray-400">Size:</span> {formatBytes(parsedFile.sizeText)}</p>
+                  )}
+                  {parsedFile.sha256 && (
+                    <p className="mt-2 break-all font-mono text-xs text-gray-300">SHA-256: {parsedFile.sha256}</p>
+                  )}
+                </div>
+
+                {!parsedFile.dataUrl && (
+                  <div className="rounded border border-gray-700 bg-black p-4 text-sm text-gray-400">
+                    Inline preview unavailable (file too large or not stored with inline data).
+                  </div>
+                )}
+
+                {parsedFile.dataUrl && parsedFile.mimeType?.startsWith("image/") && (
+                  <img
+                    src={parsedFile.dataUrl}
+                    alt={parsedFile.fileName || "Uploaded image"}
+                    className="max-h-[420px] w-full rounded border border-gray-700 object-contain"
+                  />
+                )}
+
+                {parsedFile.dataUrl && parsedFile.mimeType?.startsWith("audio/") && (
+                  <audio controls src={parsedFile.dataUrl} className="w-full" />
+                )}
+
+                {parsedFile.dataUrl && parsedFile.mimeType?.startsWith("video/") && (
+                  <video controls src={parsedFile.dataUrl} className="max-h-[420px] w-full rounded border border-gray-700" />
+                )}
+
+                {parsedFile.dataUrl && parsedFile.mimeType === "application/pdf" && (
+                  <iframe
+                    src={parsedFile.dataUrl}
+                    title={parsedFile.fileName || "Uploaded PDF"}
+                    className="h-[420px] w-full rounded border border-gray-700"
+                  />
+                )}
+
+                {parsedFile.dataUrl && (
+                  <div className="mt-4 flex justify-center">
+                    <a
+                      href={parsedFile.dataUrl}
+                      download={parsedFile.fileName}
+                      className="inline-block rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
+                    >
+                      Download Uploaded File
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Canonicalized Content */}
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-xl font-bold">Canonicalized Content</h2>
               <div className="rounded border border-gray-700 bg-black p-4">
                 <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
-                  {publication.canonicalizedContent}
+                  {canonicalizedContentDisplay}
                 </pre>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <a
+                  href={`/api/publications/${publication.id}/content`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
+                >
+                  Show Full Content
+                </a>
               </div>
             </div>
 
@@ -180,12 +266,12 @@ export default function PublicationDetailPage({
                 <div className="grid grid-cols-[120px_1fr] gap-2">
                   <span className="font-bold text-gray-400">Content Hash:</span>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate text-white">{publication.contentHash}</code>
+                    <code className="flex-1 truncate text-white" title={publication.contentHash}>{maskHash(publication.contentHash)}</code>
                     <button
                       onClick={() => copyToClipboard(publication.contentHash)}
                       className="text-xs text-gray-400 hover:text-white"
                     >
-                      Copy
+                      Copy Full
                     </button>
                   </div>
                 </div>
@@ -205,12 +291,12 @@ export default function PublicationDetailPage({
                 <div>
                   <p className="mb-1 font-bold text-gray-400">Transaction Hash</p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate text-white">{publication.txHash}</code>
+                    <code className="flex-1 truncate text-white" title={publication.txHash}>{maskHash(publication.txHash)}</code>
                     <button
                       onClick={() => copyToClipboard(publication.txHash)}
                       className="text-xs text-gray-400 hover:text-white"
                     >
-                      Copy
+                      Copy Full
                     </button>
                   </div>
                 </div>
@@ -261,12 +347,6 @@ export default function PublicationDetailPage({
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-lg font-bold">Actions</h2>
               <div className="space-y-2">
-                <button
-                  onClick={downloadProofPackage}
-                  className="w-full rounded bg-white px-4 py-2 text-sm font-bold text-black hover:bg-gray-200"
-                >
-                  Download Proof Package
-                </button>
                 <Link
                   href={`/publish?parent=${publication.contentHash}`}
                   className="block w-full rounded border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
@@ -304,7 +384,7 @@ export default function PublicationDetailPage({
             </div>
 
             {/* Verification Instructions */}
-            <div className="rounded-lg border border-gray-700 bg-black p-4">
+            <div className="rounded-lg border border-gray-700 bg-black p-6">
               <h3 className="mb-2 text-sm font-bold">How to Verify</h3>
               <ol className="list-decimal space-y-1 pl-4 text-xs text-gray-400">
                 <li>Copy the canonicalized content</li>

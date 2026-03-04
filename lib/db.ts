@@ -163,3 +163,26 @@ export function getPreviousVersion(parentHash: string): Publication | null {
   const publications = getPublications();
   return publications.find(p => p.contentHash === parentHash) || null;
 }
+
+export function deletePublicationByIdAndWallet(id: string, wallet: string): {
+  deleted: boolean;
+  reason?: 'not-found' | 'forbidden';
+} {
+  initializeDb();
+  const publications = getPublications();
+  const index = publications.findIndex(p => p.id === id);
+
+  if (index === -1) {
+    return { deleted: false, reason: 'not-found' };
+  }
+
+  const publication = publications[index];
+  if (publication.publisherWallet.toLowerCase() !== wallet.toLowerCase()) {
+    return { deleted: false, reason: 'forbidden' };
+  }
+
+  publications.splice(index, 1);
+  fs.writeFileSync(DB_PATH, JSON.stringify({ publications }, null, 2));
+
+  return { deleted: true };
+}

@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { getPublications as fetchPublications } from "@/lib/api-client";
+import { deletePublication, getPublications as fetchPublications } from "@/lib/api-client";
 
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
   id: string;
   title: string;
+  contentType: string;
   contentHash: string;
   canonicalizedContent: string;
   status: PublicationStatus;
@@ -22,6 +23,10 @@ export default function DashboardPage() {
   
   const [publications, setPublications] = useState<Publication[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [selectedPublicationIds, setSelectedPublicationIds] = useState<string[]>([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -48,6 +53,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isConnected || !address) {
       setPublications([]);
+      setSelectedPublicationIds([]);
       return;
     }
 
@@ -66,13 +72,54 @@ export default function DashboardPage() {
     return matchesSearch;
   });
 
+  const filteredIds = filteredPublications.map((publication) => publication.id);
+  const hasSelections = selectedPublicationIds.length > 0;
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedPublicationIds.includes(id));
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
 
   const getSnippet = (publication: Publication) => {
-    const snippet = publication.canonicalizedContent?.slice(0, 120) || "";
-    return snippet.length < (publication.canonicalizedContent?.length || 0) ? `${snippet}...` : snippet;
+    const content = publication.canonicalizedContent || "";
+    const descriptorFile = content.match(/FILE:(.+)/)?.[1]?.trim();
+    const descriptorType = content.match(/TYPE:(.+)/)?.[1]?.trim();
+    const descriptorSize = content.match(/SIZE:(\d+)/)?.[1]?.trim();
+
+    const formatBytes = (sizeText?: string) => {
+      if (!sizeText) return "";
+      const size = Number.parseInt(sizeText, 10);
+      if (Number.isNaN(size)) return "";
+
+      const units = ["B", "KB", "MB", "GB", "TB"];
+      let value = size;
+      let unitIndex = 0;
+      while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+      }
+
+      return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+    };
+
+    if (descriptorFile && descriptorType) {
+      const sizeLabel = formatBytes(descriptorSize);
+      const typeLabel = publication.contentType.toUpperCase();
+      return `${typeLabel}: ${descriptorFile}${sizeLabel ? ` • ${sizeLabel}` : ""}`;
+    }
+
+    if (publication.contentType === "image") {
+      return "Image entry";
+    }
+    if (publication.contentType === "audio") {
+      return "Audio entry";
+    }
+    if (publication.contentType === "video") {
+      return "Video entry";
+    }
+
+    const snippet = content.slice(0, 120);
+    return snippet.length < content.length ? `${snippet}...` : snippet;
   };
 
   const downloadProof = (pub: Publication) => {
@@ -92,6 +139,92 @@ export default function DashboardPage() {
     a.href = url;
     a.download = `proof-${pub.id}.json`;
     a.click();
+  };
+
+  const handleDeletePublication = async (publicationId: string) => {
+    if (!address) {
+      setFetchError("Wallet connection required to delete publications");
+      return;
+    }
+
+    const shouldDelete = window.confirm("Delete this publication? This action cannot be undone.");
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
+      setDeletingId(publicationId);
+      await deletePublication(publicationId, address);
+      setPublications((current) => current.filter((pub) => pub.id !== publicationId));
+      setSelectedPublicationIds((current) => current.filter((id) => id !== publicationId));
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Failed to delete publication");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const toggleSelection = (publicationId: string) => {
+    setSelectedPublicationIds((current) =>
+      current.includes(publicationId)
+        ? current.filter((id) => id !== publicationId)
+        : [...current, publicationId]
+    );
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      setSelectedPublicationIds((current) => current.filter((id) => !filteredIds.includes(id)));
+      return;
+    }
+
+    setSelectedPublicationIds((current) => Array.from(new Set([...current, ...filteredIds])));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedPublicationIds([]);
+  };
+
+  const toggleSelectMode = () => {
+    setIsSelectMode((current) => {
+      const next = !current;
+      if (!next) {
+        setSelectedPublicationIds([]);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!address) {
+      setFetchError("Wallet connection required to delete publications");
+      return;
+    }
+
+    if (!hasSelections) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(`Delete ${selectedPublicationIds.length} selected publication(s)? This action cannot be undone.`);
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
+      setIsBulkDeleting(true);
+      const idsToDelete = [...selectedPublicationIds];
+
+      for (const publicationId of idsToDelete) {
+        await deletePublication(publicationId, address);
+      }
+
+      setPublications((current) => current.filter((pub) => !idsToDelete.includes(pub.id)));
+      setSelectedPublicationIds([]);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Failed to delete selected publications");
+    } finally {
+      setIsBulkDeleting(false);
+    }
   };
 
   // Loading state
@@ -256,6 +389,40 @@ export default function DashboardPage() {
                   />
                 </div>
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={toggleSelectMode}
+                  className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
+                >
+                  {isSelectMode ? "Hide Checkboxes" : "Toggle Select"}
+                </button>
+
+                {isSelectMode && (
+                  <>
+                <button
+                  onClick={handleSelectAllFiltered}
+                  className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
+                >
+                  {allFilteredSelected ? "Unselect All" : "Select All"}
+                </button>
+                <button
+                  onClick={handleClearSelection}
+                  disabled={!hasSelections}
+                  className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                >
+                  Clear Selection
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={!hasSelections || isBulkDeleting}
+                  className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                >
+                  {isBulkDeleting ? "Deleting Selected..." : `Delete Selected (${selectedPublicationIds.length})`}
+                </button>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Publications List */}
@@ -266,75 +433,110 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 filteredPublications.map((pub) => (
-                  <div key={pub.id} className="rounded-lg border border-white bg-black p-6">
-                    <div className="mb-4">
-                      <h3 className="text-lg font-bold text-white">{pub.title}</h3>
-                      <p className="mt-1 text-sm text-gray-400">{getSnippet(pub)}</p>
-                    </div>
+                  <div
+                    key={pub.id}
+                    className={`relative rounded-lg border border-white bg-black p-6 transition-colors ${isSelectMode ? "cursor-pointer hover:bg-white/5" : ""}`}
+                    onClick={(event: MouseEvent<HTMLDivElement>) => {
+                      if (!isSelectMode) {
+                        return;
+                      }
 
-                    <div className="mb-4 space-y-2 text-xs">
-                      <div>
-                        <p className="text-gray-400">Content Hash</p>
-                        <div className="flex items-center gap-2">
-                          <code className="flex-1 truncate text-white">{pub.contentHash}</code>
-                          <button
-                            onClick={() => copyToClipboard(pub.contentHash)}
-                            className="text-gray-400 hover:text-white"
-                          >
-                            Copy
-                          </button>
-                        </div>
+                      const target = event.target as HTMLElement;
+                      if (target.closest("button,a,input,textarea,select,label")) {
+                        return;
+                      }
+
+                      toggleSelection(pub.id);
+                    }}
+                  >
+                    {isSelectMode && (
+                      <input
+                        type="checkbox"
+                        checked={selectedPublicationIds.includes(pub.id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => toggleSelection(pub.id)}
+                        className="absolute left-6 top-8 h-4 w-4 accent-white"
+                        aria-label={`Select publication ${pub.title}`}
+                      />
+                    )}
+
+                    <div className={isSelectMode ? "pl-10" : ""}>
+                      <div className="mb-4">
+                        <h3 className="text-lg font-bold text-white">{pub.title}</h3>
+                        <p className="mt-1 text-sm text-gray-400">{getSnippet(pub)}</p>
                       </div>
 
-                      {pub.txHash && (
+                      <div className="mb-4 space-y-2 text-xs">
                         <div>
-                          <p className="text-gray-400">Transaction Hash</p>
-                          <p className="truncate text-white">{pub.txHash}</p>
+                          <p className="text-gray-400">Content Hash</p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 truncate text-white">{pub.contentHash}</code>
+                            <button
+                              onClick={() => copyToClipboard(pub.contentHash)}
+                              className="text-gray-400 hover:text-white"
+                            >
+                              Copy
+                            </button>
+                          </div>
                         </div>
-                      )}
 
-                      {pub.blockTimestamp && (
-                        <div>
-                          <p className="text-gray-400">Timestamp</p>
-                          <p className="text-white">{new Date(pub.blockTimestamp).toLocaleString()}</p>
-                        </div>
-                      )}
+                        {pub.txHash && (
+                          <div>
+                            <p className="text-gray-400">Transaction Hash</p>
+                            <p className="truncate text-white">{pub.txHash}</p>
+                          </div>
+                        )}
 
-                      {pub.parentHash && (
-                        <div>
-                          <p className="text-gray-400">Parent Hash (Version Link)</p>
-                          <code className="truncate text-white">{pub.parentHash}</code>
-                        </div>
-                      )}
-                    </div>
+                        {pub.blockTimestamp && (
+                          <div>
+                            <p className="text-gray-400">Timestamp</p>
+                            <p className="text-white">{new Date(pub.blockTimestamp).toLocaleString()}</p>
+                          </div>
+                        )}
 
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href={`/publication/${pub.id}`}
-                        className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
-                      >
-                        View Details
-                      </Link>
-                      <button
-                        onClick={() => copyToClipboard(pub.contentHash)}
-                        className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
-                      >
-                        Copy Hash
-                      </button>
-                      <button
-                        onClick={() => downloadProof(pub)}
-                        className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
-                      >
-                        Download Proof
-                      </button>
-                      {pub.status === "CONFIRMED" && (
+                        {pub.parentHash && (
+                          <div>
+                            <p className="text-gray-400">Parent Hash (Version Link)</p>
+                            <code className="truncate text-white">{pub.parentHash}</code>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
                         <Link
-                          href={`/publish?parent=${pub.contentHash}`}
+                          href={`/publication/${pub.id}`}
+                          className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
+                        >
+                          View Details
+                        </Link>
+                        <button
+                          onClick={() => copyToClipboard(pub.contentHash)}
                           className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
                         >
-                          Create New Version
-                        </Link>
-                      )}
+                          Copy Hash
+                        </button>
+                        <button
+                          onClick={() => downloadProof(pub)}
+                          className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
+                        >
+                          Download Proof
+                        </button>
+                        <button
+                          onClick={() => handleDeletePublication(pub.id)}
+                          disabled={deletingId === pub.id || isBulkDeleting}
+                          className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                        >
+                          {deletingId === pub.id ? "Deleting..." : "Delete"}
+                        </button>
+                        {pub.status === "CONFIRMED" && (
+                          <Link
+                            href={`/publish?parent=${pub.contentHash}`}
+                            className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
+                          >
+                            Create New Version
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))

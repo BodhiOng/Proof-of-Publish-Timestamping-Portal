@@ -146,6 +146,13 @@ export async function getPublicationById(id: string): Promise<PublicationWithVer
   return requestJson(`/api/publications/${id}`);
 }
 
+export async function deletePublication(id: string, wallet: string): Promise<{ deleted: boolean; id: string }> {
+  return requestJson(`/api/publications/${id}`, {
+    method: 'DELETE',
+    body: { wallet },
+  });
+}
+
 export async function getPublicationStatus(id: string): Promise<PublicationStatusResponse> {
   return requestJson(`/api/publications/${id}/status`);
 }
