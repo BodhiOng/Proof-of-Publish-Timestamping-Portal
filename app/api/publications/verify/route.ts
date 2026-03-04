@@ -1,24 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPublicationsByHash } from '@/lib/db';
+import { canonicalizeContent, computeContentHash, normalizeHashInput } from '@/lib/publication-utils';
+
+async function fetchTextContent(sourceUrl: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(sourceUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.8',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL: ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { contentHash } = body;
+    const { contentHash, content, sourceUrl, fetchFromUrl } = body;
 
-    if (!contentHash) {
+    let finalHash: string | undefined = normalizeHashInput(contentHash);
+
+    if (!finalHash && typeof content === 'string' && content.length > 0) {
+      finalHash = computeContentHash(canonicalizeContent(content));
+    }
+
+    if (!finalHash && fetchFromUrl === true && typeof sourceUrl === 'string' && sourceUrl.trim()) {
+      const urlContent = await fetchTextContent(sourceUrl.trim());
+      finalHash = computeContentHash(canonicalizeContent(urlContent));
+    }
+
+    if (!finalHash) {
       return NextResponse.json(
-        { error: 'Content hash is required' },
+        { error: 'Provide contentHash, content, or sourceUrl with fetchFromUrl=true' },
         { status: 400 }
       );
     }
 
     // Find all publications with this content hash
-    const matches = getPublicationsByHash(contentHash);
+    const matches = getPublicationsByHash(finalHash);
 
     if (matches.length === 0) {
       return NextResponse.json({
-        hash: contentHash,
+        hash: finalHash,
         matched: false,
         matches: [],
       });
@@ -26,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     // Return matched publications
     return NextResponse.json({
-      hash: contentHash,
+      hash: finalHash,
       matched: true,
       matches: matches.map(pub => ({
         publicationId: pub.id,

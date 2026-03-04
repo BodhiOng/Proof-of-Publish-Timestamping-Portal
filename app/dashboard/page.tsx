@@ -1,67 +1,78 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
+import { getPublications as fetchPublications } from "@/lib/api-client";
 
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
   id: string;
   title: string;
   contentHash: string;
-  snippet: string;
+  canonicalizedContent: string;
   status: PublicationStatus;
   txHash?: string;
   blockTimestamp?: string;
   parentHash?: string;
 };
 
-const mockPublications: Publication[] = [
-  {
-    id: "1",
-    title: "My First Publication",
-    snippet: "This is the content of my first publication...",
-    contentHash: "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
-    status: "CONFIRMED",
-    txHash: "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
-    blockTimestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: "2",
-    title: "Updated Version",
-    snippet: "This is an updated version of the previous content...",
-    contentHash: "0xdef4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-    status: "CONFIRMED",
-    txHash: "0x2222333344445555666677778888999900001111aaaabbbbccccddddeeeeffff",
-    blockTimestamp: new Date(Date.now() - 3600000).toISOString(),
-    parentHash: "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
-  },
-  {
-    id: "3",
-    title: "Pending Publication",
-    snippet: "This publication is still being confirmed...",
-    contentHash: "0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba",
-    status: "PENDING",
-  },
-];
-
 export default function DashboardPage() {
   const { isConnected, address, isLoading, disconnect } = useWallet();
   
-  const [publications] = useState<Publication[]>(mockPublications);
+  const [publications, setPublications] = useState<Publication[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchError, setFetchError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<PublicationStatus | "ALL">("ALL");
+
+  const loadPublications = useCallback(async (withSync = false) => {
+    if (!address) return;
+
+    try {
+      setIsFetching(true);
+      const data = await fetchPublications({
+        wallet: address,
+        limit: 100,
+        sync: withSync,
+      });
+
+      setPublications(data.publications || []);
+      setFetchError("");
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Failed to load publications");
+    } finally {
+      setIsFetching(false);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setPublications([]);
+      return;
+    }
+
+    loadPublications(true);
+    const interval = window.setInterval(() => {
+      loadPublications(true);
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [isConnected, address, loadPublications]);
 
   const filteredPublications = publications.filter((pub) => {
     const matchesSearch = 
       pub.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       pub.contentHash.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "ALL" || pub.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const getSnippet = (publication: Publication) => {
+    const snippet = publication.canonicalizedContent?.slice(0, 120) || "";
+    return snippet.length < (publication.canonicalizedContent?.length || 0) ? `${snippet}...` : snippet;
   };
 
   const downloadProof = (pub: Publication) => {
@@ -143,7 +154,6 @@ export default function DashboardPage() {
                 <h3 className="mb-2 text-sm font-bold">What you'll see after connecting:</h3>
                 <ul className="space-y-1 text-xs text-gray-400">
                   <li>• All your published content proofs</li>
-                  <li>• Transaction status (pending, confirmed, failed)</li>
                   <li>• Version chains and content lineage</li>
                   <li>• Search and filter your publications</li>
                 </ul>
@@ -190,7 +200,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-white"></div>
-                  <span className="text-xs font-bold">Connected</span>
+                  <span className="text-xs font-bold">{isFetching ? "Syncing..." : "Connected"}</span>
                 </div>
                 <div className="grid gap-2">
                   <Link
@@ -217,27 +227,21 @@ export default function DashboardPage() {
                   <span className="text-gray-400">Total Publications</span>
                   <span className="font-bold text-white">{publications.length}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Confirmed</span>
-                  <span className="font-bold text-white">
-                    {publications.filter(p => p.status === "CONFIRMED").length}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Pending</span>
-                  <span className="font-bold text-white">
-                    {publications.filter(p => p.status === "PENDING").length}
-                  </span>
-                </div>
               </div>
             </div>
           </div>
 
           {/* Main Content */}
           <div className="space-y-6">
+            {fetchError && (
+              <div className="rounded-lg border border-white bg-black p-4">
+                <p className="text-sm font-bold text-white">⚠ {fetchError}</p>
+              </div>
+            )}
+
             {/* Filters */}
             <div className="rounded-lg border border-white bg-black p-6">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-1">
                 <div>
                   <label htmlFor="search" className="mb-2 block text-sm font-bold">
                     Search
@@ -251,22 +255,6 @@ export default function DashboardPage() {
                     placeholder="Search by title or hash..."
                   />
                 </div>
-                <div>
-                  <label htmlFor="status" className="mb-2 block text-sm font-bold">
-                    Filter by Status
-                  </label>
-                  <select
-                    id="status"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as PublicationStatus | "ALL")}
-                    className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-sm text-white focus:border-white focus:outline-none"
-                  >
-                    <option value="ALL">All</option>
-                    <option value="CONFIRMED">Confirmed</option>
-                    <option value="PENDING">Pending</option>
-                    <option value="FAILED">Failed</option>
-                  </select>
-                </div>
               </div>
             </div>
 
@@ -279,18 +267,9 @@ export default function DashboardPage() {
               ) : (
                 filteredPublications.map((pub) => (
                   <div key={pub.id} className="rounded-lg border border-white bg-black p-6">
-                    <div className="mb-4 flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-white">{pub.title}</h3>
-                        <p className="mt-1 text-sm text-gray-400">{pub.snippet}</p>
-                      </div>
-                      <span className={`ml-4 rounded-full px-3 py-1 text-xs font-bold ${
-                        pub.status === "CONFIRMED" ? "bg-white text-black" :
-                        pub.status === "PENDING" ? "border border-white bg-black text-white" :
-                        "border border-gray-700 bg-black text-gray-400"
-                      }`}>
-                        {pub.status}
-                      </span>
+                    <div className="mb-4">
+                      <h3 className="text-lg font-bold text-white">{pub.title}</h3>
+                      <p className="mt-1 text-sm text-gray-400">{getSnippet(pub)}</p>
                     </div>
 
                     <div className="mb-4 space-y-2 text-xs">
@@ -310,14 +289,7 @@ export default function DashboardPage() {
                       {pub.txHash && (
                         <div>
                           <p className="text-gray-400">Transaction Hash</p>
-                          <a
-                            href={`https://etherscan.io/tx/${pub.txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="truncate text-white hover:underline"
-                          >
-                            {pub.txHash}
-                          </a>
+                          <p className="truncate text-white">{pub.txHash}</p>
                         </div>
                       )}
 

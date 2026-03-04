@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { verifyPublicationContent } from "@/lib/api-client";
 
 type InputMethod = "text" | "file" | "url";
 type VerificationResult = {
@@ -24,6 +25,7 @@ export default function VerifyPage() {
   const [fileName, setFileName] = useState("");
   
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState("");
 
@@ -45,49 +47,33 @@ export default function VerifyPage() {
     setResult(null);
 
     try {
-      // Simulate canonicalization and hash computation
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      const canonicalized = textContent
-        .trim()
-        .replace(/\r\n/g, "\n")
-        .replace(/\s+$/gm, "")
-        .normalize("NFC");
-      
-      const mockHash = `0x${Array.from({ length: 64 }, () => 
-        Math.floor(Math.random() * 16).toString(16)
-      ).join("")}`;
+      const data = await verifyPublicationContent({ content: textContent });
 
-      // Simulate on-chain lookup
-      await new Promise(resolve => setTimeout(resolve, 600));
-      
-      // Mock result - randomly matched or not
-      const matched = Math.random() > 0.5;
-      
-      if (matched) {
-        setResult({
-          hash: mockHash,
-          matched: true,
-          matches: [
-            {
-              publicationId: "42",
-              publisher: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1",
-              timestamp: new Date(Date.now() - 86400000).toISOString(),
-              txHash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-              title: "Example Publication",
-            }
-          ]
-        });
-      } else {
-        setResult({
-          hash: mockHash,
-          matched: false,
-        });
-      }
+      setResult(data);
     } catch (err) {
-      setError("Failed to compute hash or check on-chain");
+      setError(err instanceof Error ? err.message : "Failed to verify content");
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleFetchFromUrl = async () => {
+    if (!url) return;
+
+    setIsFetchingUrl(true);
+    setError("");
+
+    try {
+      const data = await verifyPublicationContent({
+        sourceUrl: url,
+        fetchFromUrl: true,
+      });
+
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch and verify URL content");
+    } finally {
+      setIsFetchingUrl(false);
     }
   };
 
@@ -243,10 +229,11 @@ export default function VerifyPage() {
                     Content will be fetched from this URL with your consent
                   </p>
                   <button
+                    onClick={handleFetchFromUrl}
                     disabled={!url}
                     className="mt-4 w-full rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
                   >
-                    Fetch Content
+                    {isFetchingUrl ? "Fetching..." : "Fetch & Verify"}
                   </button>
                 </div>
               )}
@@ -346,17 +333,7 @@ export default function VerifyPage() {
                             
                             <div>
                               <p className="text-gray-400">Transaction Hash</p>
-                              <div className="flex items-center gap-2">
-                                <code className="flex-1 truncate text-white">{match.txHash}</code>
-                                <a
-                                  href={`https://etherscan.io/tx/${match.txHash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-white hover:underline"
-                                >
-                                  ↗
-                                </a>
-                              </div>
+                              <code className="truncate text-white">{match.txHash}</code>
                             </div>
 
                             {match.parentHash && (

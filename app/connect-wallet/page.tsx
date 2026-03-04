@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { BrowserProvider } from "ethers";
+import { getWalletStatus } from "@/lib/api-client";
 
 declare global {
   interface Window {
@@ -18,10 +19,13 @@ export default function ConnectWalletPage() {
   const [wrongNetwork, setWrongNetwork] = useState(false);
   const [error, setError] = useState<string>("");
   const [balance, setBalance] = useState<string>("");
+  const [backendSignerAddress, setBackendSignerAddress] = useState<string | null>(null);
+  const [isBackendSigningEnabled, setIsBackendSigningEnabled] = useState(false);
 
   // Check if wallet is already connected on page load
   useEffect(() => {
     checkIfWalletIsConnected();
+    loadWalletStatus();
     
     // Listen for account changes
     if (window.ethereum) {
@@ -36,6 +40,17 @@ export default function ConnectWalletPage() {
       }
     };
   }, []);
+
+  const loadWalletStatus = async () => {
+    try {
+      const status = await getWalletStatus();
+      setIsBackendSigningEnabled(status.backendSigning.enabled);
+      setBackendSignerAddress(status.backendSigning.address);
+    } catch {
+      setIsBackendSigningEnabled(false);
+      setBackendSignerAddress(null);
+    }
+  };
 
   const checkIfWalletIsConnected = async () => {
     if (!window.ethereum) return;
@@ -250,6 +265,14 @@ export default function ConnectWalletPage() {
                 Connecting your wallet gives you full control and ownership. Your private keys never leave your device.
                 You'll use your wallet to sign transactions and prove ownership of your publications.
               </p>
+              <div className="mt-3 border-t border-gray-700 pt-3 text-xs text-gray-400">
+                <p>
+                  Backend signing: {isBackendSigningEnabled ? "Enabled (development mode)" : "Disabled"}
+                </p>
+                {backendSignerAddress && (
+                  <p className="mt-1 truncate">Backend signer: {backendSignerAddress}</p>
+                )}
+              </div>
             </div>
 
             {/* Info */}

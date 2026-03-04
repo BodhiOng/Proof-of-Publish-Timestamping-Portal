@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { type ChangeEvent, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
+import {
+  canonicalizePublicationContent,
+  createPublication,
+  getPublicationStatus,
+  scrapePublicationSource,
+  updatePublicationStatus,
+  type PublicationStatus,
+  type PublicationStatusResponse,
+} from "@/lib/api-client";
 
-type ContentType = "text" | "article" | "code" | "document";
-type PublishStatus = "idle" | "previewing" | "signing" | "pending" | "confirmed" | "failed";
+type ContentType = "text" | "article" | "code" | "document" | "image" | "audio" | "video";
 
 export default function PublishPage() {
   const { isConnected, address, isLoading } = useWallet();
@@ -15,8 +23,13 @@ export default function PublishPage() {
   const [contentType, setContentType] = useState<ContentType>("text");
   const [sourceUrl, setSourceUrl] = useState("");
   const [parentHash, setParentHash] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   
-  const [status, setStatus] = useState<PublishStatus>("idle");
+  const [isSigning, setIsSigning] = useState(false);
+  const [isScrapingArticle, setIsScrapingArticle] = useState(false);
+  const [publicationStatus, setPublicationStatus] = useState<PublicationStatus | null>(null);
   const [canonicalizedContent, setCanonicalizedContent] = useState("");
   const [computedHash, setComputedHash] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -26,29 +39,63 @@ export default function PublishPage() {
   const [publicationId, setPublicationId] = useState("");
   const [error, setError] = useState("");
 
-  const handlePreview = () => {
-    setStatus("previewing");
+  const supportsFileUpload = contentType === "code" || contentType === "document" || contentType === "image" || contentType === "audio" || contentType === "video";
+  const isCodeType = contentType === "code";
+  const isContentReadOnly = supportsFileUpload;
+  const isContentOptional = contentType === "document" || contentType === "image" || contentType === "audio" || contentType === "video";
+  const hasCodeText = content.trim().length > 0;
+  const hasCodeFile = uploadedFileName.trim().length > 0;
+  const isCodeInputValid = !isCodeType || hasCodeFile || hasCodeText;
+  const fileAccept =
+    contentType === "code"
+      ? ".js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sol,.json,.xml,.html,.css,.scss,.sh,.bat,.ps1,.md,text/plain,text/javascript,application/javascript,text/x-python"
+      : contentType === "document"
+      ? ".pdf,.doc,.docx,.txt,.md,.rtf,.odt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+      : contentType === "image"
+        ? "image/*"
+        : contentType === "audio"
+          ? "audio/*"
+          : contentType === "video"
+            ? "video/*"
+            : undefined;
+  const acceptedFormatsLabel =
+    contentType === "code"
+      ? ".js, .ts, .jsx, .tsx, .py, .java, .c, .cpp, .h, .hpp, .cs, .go, .rs, .php, .rb, .sol, .json, .xml, .html, .css, .scss, .sh, .bat, .ps1, .md"
+      : contentType === "document"
+        ? ".pdf, .doc, .docx, .txt, .md, .rtf, .odt"
+        : contentType === "image"
+          ? "Any image format (e.g. .png, .jpg, .jpeg, .gif, .webp, .svg)"
+          : contentType === "audio"
+            ? "Any audio format (e.g. .mp3, .wav, .ogg, .m4a, .flac)"
+            : contentType === "video"
+              ? "Any video format (e.g. .mp4, .webm, .mov, .mkv)"
+              : "";
+
+  const handlePreview = async () => {
     setError("");
-    
-    // Canonicalization logic (placeholder - will be implemented with actual crypto)
-    const canonicalized = content
-      .trim()
-      .replace(/\r\n/g, "\n")
-      .replace(/\s+$/gm, "")
-      .normalize("NFC");
-    
-    setCanonicalizedContent(canonicalized);
-    
-    // Hash computation (placeholder - will use SubtleCrypto)
-    const mockHash = `0x${Array.from({ length: 64 }, () => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join("")}`;
-    
-    setComputedHash(mockHash);
+
+    if (!isCodeInputValid) {
+      setError("For code type, upload a code file first");
+      return;
+    }
+
+    try {
+      const data = await canonicalizePublicationContent(content);
+
+      setCanonicalizedContent(data.canonicalizedContent);
+      setComputedHash(data.contentHash);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to canonicalize content");
+    }
   };
 
   const handleSignAndRegister = () => {
-    if (!canonicalizedContent || !computedHash) {
+    if (!isCodeInputValid) {
+      setError("For code type, upload a code file first");
+      return;
+    }
+
+    if (!computedHash) {
       setError("Please preview canonicalized content first");
       return;
     }
@@ -57,24 +104,191 @@ export default function PublishPage() {
 
   const confirmPublish = async () => {
     setShowConfirmModal(false);
-    setStatus("signing");
-    
-    // Simulate wallet signing and transaction
-    setTimeout(() => {
-      setStatus("pending");
-      setTxHash("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
-      
-      setTimeout(() => {
-        setStatus("confirmed");
-        setBlockTimestamp(new Date().toISOString());
-        setPublicationId("1");
-      }, 3000);
-    }, 1500);
+    setIsSigning(true);
+    setError("");
+
+    try {
+      if (!address) {
+        throw new Error("Wallet is not connected");
+      }
+
+      const data = await createPublication({
+        title,
+        contentType,
+        canonicalizedContent,
+        contentHash: computedHash,
+        sourceUrl: sourceUrl || undefined,
+        parentHash: parentHash || undefined,
+        publisherWallet: address,
+        status: "PENDING",
+      });
+
+      const publication = data.publication;
+      setPublicationId(publication.id);
+      setTxHash(publication.txHash);
+      setBlockTimestamp(publication.blockTimestamp);
+      setPublicationStatus(publication.status);
+
+      if (publication.status === "CONFIRMED") {
+        return;
+      }
+      if (publication.status === "FAILED") {
+        return;
+      }
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        let statusData: PublicationStatusResponse;
+        try {
+          statusData = await getPublicationStatus(publication.id);
+        } catch {
+          continue;
+        }
+
+        setBlockTimestamp(statusData.blockTimestamp || publication.blockTimestamp);
+        setPublicationStatus(statusData.status);
+
+        if (statusData.status === "CONFIRMED") {
+          return;
+        }
+
+        if (statusData.status === "FAILED") {
+          return;
+        }
+      }
+    } catch (err) {
+      setPublicationStatus("FAILED");
+      setError(err instanceof Error ? err.message : "Failed to publish content");
+    } finally {
+      setIsSigning(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
+
+  const handleManualStatusUpdate = async (nextStatus: "CONFIRMED" | "FAILED") => {
+    if (!publicationId) {
+      return;
+    }
+
+    try {
+      const data = await updatePublicationStatus(publicationId, nextStatus);
+      setBlockTimestamp(data.blockTimestamp);
+      setPublicationStatus(data.status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update status");
+    }
+  };
+
+  const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setError("");
+    setUploadedFileName(file.name);
+    setCanonicalizedContent("");
+    setComputedHash("");
+    setIsUploadingFile(true);
+    setUploadProgress(0);
+
+    try {
+      const readFileWithProgress = <T,>(mode: "text" | "arrayBuffer") => new Promise<T>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Failed to read uploaded file"));
+        reader.onload = () => resolve(reader.result as T);
+        reader.onloadend = () => setUploadProgress(100);
+        reader.onprogress = (progressEvent) => {
+          if (progressEvent.lengthComputable) {
+            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+            setUploadProgress(percent);
+          }
+        };
+
+        if (mode === "text") {
+          reader.readAsText(file);
+        } else {
+          reader.readAsArrayBuffer(file);
+        }
+      });
+
+      const isTextDocument = contentType === "document" && (
+        file.type.startsWith("text/") ||
+        file.type.includes("json") ||
+        file.type.includes("xml") ||
+        file.name.endsWith(".txt") ||
+        file.name.endsWith(".md")
+      );
+      const isCodeFile = contentType === "code";
+
+      let fileContent = "";
+
+      if (isTextDocument || isCodeFile) {
+        const text = await readFileWithProgress<string>("text");
+        if (!text) {
+          throw new Error("Uploaded file did not produce readable content");
+        }
+        fileContent = text;
+      } else {
+        const bytes = await readFileWithProgress<ArrayBuffer>("arrayBuffer");
+        const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+        const hashHex = Array.from(new Uint8Array(hashBuffer))
+          .map((value) => value.toString(16).padStart(2, "0"))
+          .join("");
+
+        fileContent = [
+          `FILE:${file.name}`,
+          `TYPE:${file.type || "application/octet-stream"}`,
+          `SIZE:${file.size}`,
+          `SHA256:0x${hashHex}`,
+        ].join("\n");
+      }
+
+      setContent(fileContent);
+      if (!title.trim()) {
+        setTitle(file.name.replace(/\.[^/.]+$/, ""));
+      }
+      setUploadProgress(100);
+    } catch (err) {
+      setUploadProgress(0);
+      setError(err instanceof Error ? err.message : "Failed to load uploaded file");
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
+  const handleScrapeArticle = async () => {
+    if (contentType !== "article") {
+      return;
+    }
+
+    if (!sourceUrl.trim()) {
+      setError("Please provide a source URL first");
+      return;
+    }
+
+    setIsScrapingArticle(true);
+    setError("");
+
+    try {
+      const data = await scrapePublicationSource(sourceUrl.trim());
+      setContent(data.content);
+      if (!title.trim() && data.title) {
+        setTitle(data.title);
+      }
+      setCanonicalizedContent("");
+      setComputedHash("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to scrape content from URL");
+    } finally {
+      setIsScrapingArticle(false);
+    }
+  };
+
+  const isUploadComplete = !isUploadingFile && uploadProgress === 100;
 
   // Loading state
   if (isLoading) {
@@ -168,7 +382,7 @@ export default function PublishPage() {
           </div>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-8 lg:grid-cols-2 xl:gap-10">
           {/* Left Column: Form */}
           <div className="space-y-6">
             <div className="rounded-lg border border-white bg-black p-6">
@@ -197,48 +411,121 @@ export default function PublishPage() {
                 <select
                   id="contentType"
                   value={contentType}
-                  onChange={(e) => setContentType(e.target.value as ContentType)}
+                  onChange={(e) => {
+                    setContentType(e.target.value as ContentType);
+                    setUploadedFileName("");
+                  }}
                   className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-white focus:border-white focus:outline-none"
                 >
                   <option value="text">Plain Text</option>
                   <option value="article">Article</option>
                   <option value="code">Code</option>
                   <option value="document">Document</option>
+                  <option value="image">Image</option>
+                  <option value="audio">Audio</option>
+                  <option value="video">Video</option>
                 </select>
               </div>
+
+              {supportsFileUpload && (
+                <div className="mb-4">
+                  <label htmlFor="file-upload" className="mb-2 block text-sm font-bold">
+                    Upload {contentType === "document" ? "Document" : contentType.charAt(0).toUpperCase() + contentType.slice(1)} File
+                  </label>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept={fileAccept}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className="flex cursor-pointer items-center justify-center rounded border border-gray-700 bg-black px-4 py-4 text-center hover:border-white"
+                  >
+                    <div>
+                      <p className="font-bold text-white">Click to upload file</p>
+                      <p className="mt-1 text-xs text-gray-400">{uploadedFileName || "No file selected"}</p>
+                    </div>
+                  </label>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {contentType === "code"
+                      ? "For code type, upload a code file. The content box is read-only."
+                      : "Uploaded file content is loaded into the content field for hashing and publication."}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Accepted formats: {acceptedFormatsLabel}
+                  </p>
+                  {(isUploadingFile || uploadProgress > 0) && (
+                    <div className="mt-3">
+                      <div className="mb-1 flex items-center justify-between text-xs text-gray-400">
+                        <span>
+                          {isUploadingFile
+                            ? "Uploading..."
+                            : isUploadComplete
+                              ? "Upload complete"
+                              : "Upload interrupted"}
+                        </span>
+                        <span>{uploadProgress}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded border border-gray-700 bg-black">
+                        <div
+                          className="h-full bg-white transition-all duration-200"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Content Editor */}
               <div className="mb-4">
                 <label htmlFor="content" className="mb-2 block text-sm font-bold">
-                  Content *
+                  Content {isContentOptional || isCodeType ? <span className="font-normal text-gray-400">(optional)</span> : "*"}
                 </label>
                 <textarea
                   id="content"
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  className="w-full rounded border border-gray-700 bg-black px-3 py-2 font-mono text-sm text-white focus:border-white focus:outline-none"
+                  readOnly={isContentReadOnly}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-2 font-mono text-sm text-white focus:border-white focus:outline-none read-only:cursor-not-allowed read-only:opacity-80"
                   rows={12}
-                  placeholder="Enter or paste your content here..."
+                  placeholder={supportsFileUpload ? "Upload a file above to populate content..." : "Enter or paste your content here..."}
                 />
                 <p className="mt-1 text-xs text-gray-400">
-                  {content.length} characters
+                  {supportsFileUpload ? "Read-only for this content type" : `${content.length} characters`}
                 </p>
               </div>
 
-              {/* Source URL (Optional) */}
-              <div className="mb-4">
-                <label htmlFor="sourceUrl" className="mb-2 block text-sm font-bold">
-                  Source URL <span className="font-normal text-gray-400">(optional)</span>
-                </label>
-                <input
-                  id="sourceUrl"
-                  type="url"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-white focus:border-white focus:outline-none"
-                  placeholder="https://example.com/original-content"
-                />
-              </div>
+              {contentType === "article" && (
+                <div className="mb-4">
+                  <label htmlFor="sourceUrl" className="mb-2 block text-sm font-bold">
+                    Source URL <span className="font-normal text-gray-400">(optional)</span>
+                  </label>
+                  <input
+                    id="sourceUrl"
+                    type="url"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                    className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-white focus:border-white focus:outline-none"
+                    placeholder="https://example.com/original-content"
+                  />
+                  <div className="mt-2">
+                    <button
+                      onClick={handleScrapeArticle}
+                      type="button"
+                      disabled={!sourceUrl.trim() || isScrapingArticle || isSigning}
+                      className="rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
+                    >
+                      {isScrapingArticle ? "Scraping..." : "Scrape URL into Content"}
+                    </button>
+                    <p className="mt-1 text-xs text-gray-400">
+                      For article type, fetch text from URL and auto-fill the content box
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Parent Hash (Optional) */}
               <div className="mb-4">
@@ -264,14 +551,14 @@ export default function PublishPage() {
             <div className="flex gap-3">
               <button
                 onClick={handlePreview}
-                disabled={!title || !content || status === "signing" || status === "pending"}
+                disabled={!title || (!isCodeType && !isContentOptional && !content) || (isCodeType && !isCodeInputValid) || isSigning || publicationStatus === "PENDING"}
                 className="flex-1 rounded-full border border-white bg-black px-6 py-3 font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
               >
                 Preview Canonicalized
               </button>
               <button
                 onClick={handleSignAndRegister}
-                disabled={!canonicalizedContent || status === "signing" || status === "pending" || status === "confirmed"}
+                disabled={!computedHash || isSigning || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
                 className="flex-1 rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
               >
                 Sign & Register
@@ -280,14 +567,14 @@ export default function PublishPage() {
           </div>
 
           {/* Right Column: Preview & Status */}
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
             {/* Preview Area */}
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-xl font-bold">Canonicalized Preview</h2>
               
               {canonicalizedContent ? (
                 <>
-                  <div className="mb-4 rounded border border-gray-700 bg-black p-4">
+                  <div className="mb-4 max-h-[320px] overflow-y-auto rounded border border-gray-700 bg-black p-4">
                     <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
                       {canonicalizedContent}
                     </pre>
@@ -313,85 +600,97 @@ export default function PublishPage() {
                   </div>
                 </>
               ) : (
-                <div className="rounded border border-gray-700 bg-black p-8 text-center text-gray-400">
+                <div className="flex min-h-[220px] items-center justify-center rounded border border-gray-700 bg-black p-8 text-center text-gray-400">
                   <p>Click "Preview Canonicalized" to see normalized content and computed hash</p>
                 </div>
               )}
             </div>
 
             {/* Status Display */}
-            {status !== "idle" && status !== "previewing" && (
-              <div className="rounded-lg border border-white bg-black p-6">
-                <h2 className="mb-4 text-xl font-bold">Publication Status</h2>
-                
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold">Status</span>
-                    <span className={`rounded-full border px-3 py-1 text-xs font-bold ${
-                      status === "confirmed" ? "border-white bg-white text-black" :
-                      status === "failed" ? "border-white bg-black text-white" :
-                      "border-gray-700 bg-black text-gray-400"
-                    }`}>
-                      {status.toUpperCase()}
-                    </span>
-                  </div>
-                  
-                  {txHash && (
-                    <div className="rounded border border-gray-700 bg-black p-3">
-                      <p className="mb-1 text-xs font-bold text-gray-400">Transaction Hash</p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 truncate font-mono text-xs text-white">{txHash}</code>
-                        <button
-                          onClick={() => copyToClipboard(txHash)}
-                          className="text-xs text-gray-400 hover:text-white"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <a
-                        href={`https://etherscan.io/tx/${txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-block text-xs text-white hover:underline"
-                      >
-                        View on Explorer →
-                      </a>
-                    </div>
-                  )}
-                  
-                  {blockTimestamp && (
-                    <div className="rounded border border-gray-700 bg-black p-3">
-                      <p className="mb-1 text-xs font-bold text-gray-400">Block Timestamp</p>
-                      <p className="text-sm text-white">{new Date(blockTimestamp).toLocaleString()}</p>
-                    </div>
-                  )}
-                  
-                  {publicationId && (
-                    <div className="rounded border border-gray-700 bg-black p-3">
-                      <p className="mb-1 text-xs font-bold text-gray-400">Publication ID</p>
-                      <p className="text-sm text-white">#{publicationId}</p>
-                    </div>
-                  )}
-
-                  {status === "confirmed" && (
-                    <div className="mt-4 flex gap-2">
-                      <Link
-                        href={`/publication/${publicationId}`}
-                        className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
-                      >
-                        View Details
-                      </Link>
-                      <Link
-                        href="/dashboard"
-                        className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
-                      >
-                        Go to Dashboard
-                      </Link>
-                    </div>
-                  )}
+            <div className="rounded-lg border border-white bg-black p-6">
+              <h2 className="mb-4 text-xl font-bold">Publication Status</h2>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold">Status</span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                    isSigning ? "border-gray-700 bg-black text-gray-400" :
+                    publicationStatus === "CONFIRMED" ? "border-white bg-white text-black" :
+                    publicationStatus === "FAILED" ? "border-white bg-black text-white" :
+                    publicationStatus === "PENDING" ? "border-gray-700 bg-black text-gray-400" :
+                    "border-gray-700 bg-black text-gray-400"
+                  }`}>
+                    {isSigning ? "SIGNING" : publicationStatus || "NOT STARTED"}
+                  </span>
                 </div>
+                
+                {txHash && (
+                  <div className="rounded border border-gray-700 bg-black p-3">
+                    <p className="mb-1 text-xs font-bold text-gray-400">Transaction Hash</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 truncate font-mono text-xs text-white">{txHash}</code>
+                      <button
+                        onClick={() => copyToClipboard(txHash)}
+                        className="text-xs text-gray-400 hover:text-white"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {blockTimestamp && (
+                  <div className="rounded border border-gray-700 bg-black p-3">
+                    <p className="mb-1 text-xs font-bold text-gray-400">Block Timestamp</p>
+                    <p className="text-sm text-white">{new Date(blockTimestamp).toLocaleString()}</p>
+                  </div>
+                )}
+                
+                {publicationId && (
+                  <div className="rounded border border-gray-700 bg-black p-3">
+                    <p className="mb-1 text-xs font-bold text-gray-400">Publication ID</p>
+                    <p className="text-sm text-white">#{publicationId}</p>
+                  </div>
+                )}
+
+                {publicationStatus === "PENDING" && publicationId && (
+                  <div className="rounded border border-gray-700 bg-black p-3">
+                    <p className="mb-2 text-xs font-bold text-gray-400">Testing Controls</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleManualStatusUpdate("CONFIRMED")}
+                        className="flex-1 rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black"
+                      >
+                        Mark Confirmed
+                      </button>
+                      <button
+                        onClick={() => handleManualStatusUpdate("FAILED")}
+                        className="flex-1 rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black"
+                      >
+                        Mark Failed
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {publicationStatus === "CONFIRMED" && (
+                  <div className="mt-4 flex gap-2">
+                    <Link
+                      href={`/publication/${publicationId}`}
+                      className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
+                    >
+                      View Details
+                    </Link>
+                    <Link
+                      href="/dashboard"
+                      className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
+                    >
+                      Go to Dashboard
+                    </Link>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Error Display */}
             {error && (

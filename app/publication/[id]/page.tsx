@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
+import { getPublicationById } from "@/lib/api-client";
 
 type Publication = {
   id: string;
@@ -32,23 +33,12 @@ export default function PublicationDetailPage({
   useEffect(() => {
     async function fetchPublication() {
       try {
-        const response = await fetch(`/api/publications/${id}`);
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError("Publication not found");
-          } else {
-            setError("Failed to load publication");
-          }
-          setLoading(false);
-          return;
-        }
-
-        const data = await response.json();
+        const data = await getPublicationById(id);
         setPublication(data);
         setLoading(false);
       } catch (err) {
-        setError("Failed to load publication");
+        const message = err instanceof Error ? err.message : "Failed to load publication";
+        setError(message === "Publication not found" ? message : "Failed to load publication");
         setLoading(false);
       }
     }
@@ -223,14 +213,6 @@ export default function PublicationDetailPage({
                       Copy
                     </button>
                   </div>
-                  <a
-                    href={`https://etherscan.io/tx/${publication.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-1 inline-block text-xs text-white hover:underline"
-                  >
-                    View on Etherscan →
-                  </a>
                 </div>
                 <div>
                   <p className="mb-1 font-bold text-gray-400">Block Timestamp</p>

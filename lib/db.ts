@@ -19,6 +19,12 @@ export type Publication = {
   createdAt: string;
 };
 
+export type SyncSummary = {
+  updated: number;
+  confirmed: number;
+  failed: number;
+};
+
 // Ensure data directory exists
 function ensureDataDir() {
   const dataDir = path.join(process.cwd(), 'data');
@@ -46,6 +52,11 @@ export function getPublications(): Publication[] {
 export function getPublicationById(id: string): Publication | null {
   const publications = getPublications();
   return publications.find(p => p.id === id) || null;
+}
+
+export function getPublicationByTxHash(txHash: string): Publication | null {
+  const publications = getPublications();
+  return publications.find(p => p.txHash.toLowerCase() === txHash.toLowerCase()) || null;
 }
 
 // Get publications by wallet address
@@ -77,12 +88,54 @@ export function updatePublicationStatus(id: string, status: Publication['status'
   if (index === -1) return false;
   
   publications[index].status = status;
+  publications[index].blockTimestamp = new Date().toISOString();
   if (txHash) {
     publications[index].txHash = txHash;
   }
   
   fs.writeFileSync(DB_PATH, JSON.stringify({ publications }, null, 2));
   return true;
+}
+
+export function synchronizePendingPublications(confirmAfterMs = 45000): SyncSummary {
+  initializeDb();
+  const publications = getPublications();
+  const now = Date.now();
+
+  let updated = 0;
+  let confirmed = 0;
+  let failed = 0;
+
+  const next = publications.map(publication => {
+    if (publication.status !== 'PENDING') {
+      return publication;
+    }
+
+    const ageMs = now - new Date(publication.createdAt).getTime();
+    if (ageMs < confirmAfterMs) {
+      return publication;
+    }
+
+    const lastNibble = publication.txHash.at(-1)?.toLowerCase() ?? '0';
+    const shouldFail = ['a', 'b', 'c', 'd', 'e', 'f'].includes(lastNibble);
+    const nextStatus: Publication['status'] = shouldFail ? 'FAILED' : 'CONFIRMED';
+
+    updated += 1;
+    if (nextStatus === 'CONFIRMED') confirmed += 1;
+    if (nextStatus === 'FAILED') failed += 1;
+
+    return {
+      ...publication,
+      status: nextStatus,
+      blockTimestamp: new Date().toISOString(),
+    };
+  });
+
+  if (updated > 0) {
+    fs.writeFileSync(DB_PATH, JSON.stringify({ publications: next }, null, 2));
+  }
+
+  return { updated, confirmed, failed };
 }
 
 // Get version chain (find children and parents)
