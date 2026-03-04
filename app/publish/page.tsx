@@ -1,24 +1,74 @@
 "use client";
 
 import Link from "next/link";
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import {
   canonicalizePublicationContent,
   createPublication,
-  getPublicationStatus,
   scrapePublicationSource,
-  updatePublicationStatus,
   type PublicationStatus,
-  type PublicationStatusResponse,
 } from "@/lib/api-client";
 
 type ContentType = "text" | "article" | "code" | "document" | "image" | "audio" | "video";
 
+const CODE_EXTENSIONS = new Set([
+  ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".php", ".rb", ".sol", ".json", ".xml", ".html", ".css", ".scss", ".sh", ".bat", ".ps1", ".md",
+]);
+
+const DOCUMENT_EXTENSIONS = new Set([
+  ".pdf", ".doc", ".docx", ".txt", ".md", ".rtf", ".odt",
+]);
+
+function getFileExtension(fileName: string): string {
+  const index = fileName.lastIndexOf(".");
+  if (index === -1) return "";
+  return fileName.slice(index).toLowerCase();
+}
+
+function isFileAllowedForContentType(file: File, selectedType: ContentType): boolean {
+  const mime = (file.type || "").toLowerCase();
+  const extension = getFileExtension(file.name);
+
+  if (selectedType === "code") {
+    return CODE_EXTENSIONS.has(extension)
+      || mime.startsWith("text/")
+      || mime.includes("javascript")
+      || mime.includes("json")
+      || mime.includes("xml")
+      || mime.includes("x-python");
+  }
+
+  if (selectedType === "document") {
+    return DOCUMENT_EXTENSIONS.has(extension)
+      || mime === "application/pdf"
+      || mime === "application/msword"
+      || mime.includes("officedocument.wordprocessingml.document")
+      || mime === "text/markdown"
+      || mime.startsWith("text/");
+  }
+
+  if (selectedType === "image") {
+    return mime.startsWith("image/");
+  }
+
+  if (selectedType === "audio") {
+    return mime.startsWith("audio/");
+  }
+
+  if (selectedType === "video") {
+    return mime.startsWith("video/");
+  }
+
+  return true;
+}
+
 export default function PublishPage() {
   const { isConnected, address, isLoading } = useWallet();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   const [title, setTitle] = useState("");
+  const [hasFilledTitleBefore, setHasFilledTitleBefore] = useState(false);
   const [content, setContent] = useState("");
   const [contentType, setContentType] = useState<ContentType>("text");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -26,6 +76,7 @@ export default function PublishPage() {
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadWarning, setUploadWarning] = useState("");
   
   const [isSigning, setIsSigning] = useState(false);
   const [isScrapingArticle, setIsScrapingArticle] = useState(false);
@@ -120,7 +171,7 @@ export default function PublishPage() {
         sourceUrl: sourceUrl || undefined,
         parentHash: parentHash || undefined,
         publisherWallet: address,
-        status: "PENDING",
+        status: "CONFIRMED",
       });
 
       const publication = data.publication;
@@ -128,34 +179,6 @@ export default function PublishPage() {
       setTxHash(publication.txHash);
       setBlockTimestamp(publication.blockTimestamp);
       setPublicationStatus(publication.status);
-
-      if (publication.status === "CONFIRMED") {
-        return;
-      }
-      if (publication.status === "FAILED") {
-        return;
-      }
-
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        let statusData: PublicationStatusResponse;
-        try {
-          statusData = await getPublicationStatus(publication.id);
-        } catch {
-          continue;
-        }
-
-        setBlockTimestamp(statusData.blockTimestamp || publication.blockTimestamp);
-        setPublicationStatus(statusData.status);
-
-        if (statusData.status === "CONFIRMED") {
-          return;
-        }
-
-        if (statusData.status === "FAILED") {
-          return;
-        }
-      }
     } catch (err) {
       setPublicationStatus("FAILED");
       setError(err instanceof Error ? err.message : "Failed to publish content");
@@ -168,27 +191,25 @@ export default function PublishPage() {
     navigator.clipboard.writeText(text);
   };
 
-  const handleManualStatusUpdate = async (nextStatus: "CONFIRMED" | "FAILED") => {
-    if (!publicationId) {
-      return;
-    }
-
-    try {
-      const data = await updatePublicationStatus(publicationId, nextStatus);
-      setBlockTimestamp(data.blockTimestamp);
-      setPublicationStatus(data.status);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update status");
-    }
-  };
-
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
     }
 
+    if (!isFileAllowedForContentType(file, contentType)) {
+      const warningMessage = `Warning: ${file.name} does not match selected content type (${contentType}). Please upload a valid file.`;
+      setUploadWarning(warningMessage);
+      setError("Uploaded file type does not match selected content type");
+      setUploadedFileName("");
+      setUploadProgress(0);
+      setContent("");
+      event.target.value = "";
+      return;
+    }
+
     setError("");
+    setUploadWarning("");
     setUploadedFileName(file.name);
     setCanonicalizedContent("");
     setComputedHash("");
@@ -248,7 +269,7 @@ export default function PublishPage() {
       }
 
       setContent(fileContent);
-      if (!title.trim()) {
+      if (!title.trim() && !hasFilledTitleBefore) {
         setTitle(file.name.replace(/\.[^/.]+$/, ""));
       }
       setUploadProgress(100);
@@ -397,7 +418,12 @@ export default function PublishPage() {
                   id="title"
                   type="text"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (!hasFilledTitleBefore && e.target.value.trim().length > 0) {
+                      setHasFilledTitleBefore(true);
+                    }
+                  }}
                   className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-white focus:border-white focus:outline-none"
                   placeholder="Enter content title"
                 />
@@ -414,6 +440,14 @@ export default function PublishPage() {
                   onChange={(e) => {
                     setContentType(e.target.value as ContentType);
                     setUploadedFileName("");
+                    setContent("");
+                    setCanonicalizedContent("");
+                    setComputedHash("");
+                    setUploadProgress(0);
+                    setUploadWarning("");
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                    }
                   }}
                   className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-white focus:border-white focus:outline-none"
                 >
@@ -433,6 +467,7 @@ export default function PublishPage() {
                     Upload {contentType === "document" ? "Document" : contentType.charAt(0).toUpperCase() + contentType.slice(1)} File
                   </label>
                   <input
+                    ref={fileInputRef}
                     id="file-upload"
                     type="file"
                     accept={fileAccept}
@@ -449,13 +484,11 @@ export default function PublishPage() {
                     </div>
                   </label>
                   <p className="mt-1 text-xs text-gray-400">
-                    {contentType === "code"
-                      ? "For code type, upload a code file. The content box is read-only."
-                      : "Uploaded file content is loaded into the content field for hashing and publication."}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-400">
                     Accepted formats: {acceptedFormatsLabel}
                   </p>
+                  {uploadWarning && (
+                    <p className="mt-1 text-xs font-bold text-white">⚠ {uploadWarning}</p>
+                  )}
                   {(isUploadingFile || uploadProgress > 0) && (
                     <div className="mt-3">
                       <div className="mb-1 flex items-center justify-between text-xs text-gray-400">
@@ -482,7 +515,7 @@ export default function PublishPage() {
               {/* Content Editor */}
               <div className="mb-4">
                 <label htmlFor="content" className="mb-2 block text-sm font-bold">
-                  Content {isContentOptional || isCodeType ? <span className="font-normal text-gray-400">(optional)</span> : "*"}
+                  Content {!supportsFileUpload ? "*" : ""}
                 </label>
                 <textarea
                   id="content"
@@ -650,26 +683,6 @@ export default function PublishPage() {
                   <div className="rounded border border-gray-700 bg-black p-3">
                     <p className="mb-1 text-xs font-bold text-gray-400">Publication ID</p>
                     <p className="text-sm text-white">#{publicationId}</p>
-                  </div>
-                )}
-
-                {publicationStatus === "PENDING" && publicationId && (
-                  <div className="rounded border border-gray-700 bg-black p-3">
-                    <p className="mb-2 text-xs font-bold text-gray-400">Testing Controls</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleManualStatusUpdate("CONFIRMED")}
-                        className="flex-1 rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black"
-                      >
-                        Mark Confirmed
-                      </button>
-                      <button
-                        onClick={() => handleManualStatusUpdate("FAILED")}
-                        className="flex-1 rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black"
-                      >
-                        Mark Failed
-                      </button>
-                    </div>
                   </div>
                 )}
 
