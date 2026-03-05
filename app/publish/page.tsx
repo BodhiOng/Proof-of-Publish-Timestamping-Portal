@@ -12,8 +12,6 @@ import {
 
 type ContentType = "text" | "article" | "code" | "document" | "image" | "audio" | "video";
 
-const INLINE_FILE_PREVIEW_LIMIT_BYTES = 8 * 1024 * 1024;
-
 const CODE_EXTENSIONS = new Set([
   ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".php", ".rb", ".sol", ".json", ".xml", ".html", ".css", ".scss", ".sh", ".bat", ".ps1", ".md",
 ]);
@@ -240,18 +238,11 @@ export default function PublishPage() {
         }
       });
 
-      const isTextDocument = contentType === "document" && (
-        file.type.startsWith("text/") ||
-        file.type.includes("json") ||
-        file.type.includes("xml") ||
-        file.name.endsWith(".txt") ||
-        file.name.endsWith(".md")
-      );
       const isCodeFile = contentType === "code";
 
       let fileContent = "";
 
-      if (isTextDocument || isCodeFile) {
+      if (isCodeFile) {
         const text = await readFileWithProgress<string>("text");
         if (!text) {
           throw new Error("Uploaded file did not produce readable content");
@@ -264,17 +255,15 @@ export default function PublishPage() {
           .map((value) => value.toString(16).padStart(2, "0"))
           .join("");
 
-        let previewDataUrl = "";
-        if (file.size <= INLINE_FILE_PREVIEW_LIMIT_BYTES) {
-          previewDataUrl = await readFileWithProgress<string>("dataUrl");
-        }
+        // Persist full file data so publication details can always render previews.
+        const previewDataUrl = await readFileWithProgress<string>("dataUrl");
 
         fileContent = [
           `FILE:${file.name}`,
           `TYPE:${file.type || "application/octet-stream"}`,
           `SIZE:${file.size}`,
           `SHA256:0x${hashHex}`,
-          ...(previewDataUrl ? [`DATAURL:${previewDataUrl}`] : []),
+          `DATAURL:${previewDataUrl}`,
         ].join("\n");
       }
 

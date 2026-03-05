@@ -131,8 +131,27 @@ export default function PublicationDetailPage({
     navigator.clipboard.writeText(text);
   };
 
+  const downloadCanonicalizedDocumentText = () => {
+    const fileBaseName = (publication.title || "publication-document")
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "publication-document";
+
+    const blob = new Blob([publication.canonicalizedContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${fileBaseName}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const parsedFile = parseFileDescriptor(publication.canonicalizedContent);
   const hasFileDescriptor = Boolean(parsedFile.fileName && parsedFile.mimeType);
+  const isDocumentPublication = publication.contentType === "document";
   const canonicalizedContentDisplay = publication.canonicalizedContent
     .replace(/\n?DATAURL:data:[^\n]+/g, "")
     .trim();
@@ -172,7 +191,13 @@ export default function PublicationDetailPage({
 
                 {!parsedFile.dataUrl && (
                   <div className="rounded border border-gray-700 bg-black p-4 text-sm text-gray-400">
-                    Inline preview unavailable (file too large or not stored with inline data).
+                    Inline preview unavailable for this publication (inline file data not stored).
+                  </div>
+                )}
+
+                {parsedFile.dataUrl && isDocumentPublication && (
+                  <div className="rounded border border-gray-700 bg-black p-4 text-sm text-gray-400">
+                    Document preview is disabled. Use the download button below.
                   </div>
                 )}
 
@@ -192,15 +217,19 @@ export default function PublicationDetailPage({
                   <video controls src={parsedFile.dataUrl} className="max-h-[420px] w-full rounded border border-gray-700" />
                 )}
 
-                {parsedFile.dataUrl && parsedFile.mimeType === "application/pdf" && (
-                  <iframe
-                    src={parsedFile.dataUrl}
-                    title={parsedFile.fileName || "Uploaded PDF"}
-                    className="h-[420px] w-full rounded border border-gray-700"
-                  />
+                {parsedFile.dataUrl && isDocumentPublication && (
+                  <div className="mt-4 flex flex-wrap justify-center gap-3">
+                    <a
+                      href={parsedFile.dataUrl}
+                      download={parsedFile.fileName}
+                      className="inline-block rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
+                    >
+                      Download Document
+                    </a>
+                  </div>
                 )}
 
-                {parsedFile.dataUrl && (
+                {parsedFile.dataUrl && !isDocumentPublication && (
                   <div className="mt-4 flex justify-center">
                     <a
                       href={parsedFile.dataUrl}
@@ -211,6 +240,32 @@ export default function PublicationDetailPage({
                     </a>
                   </div>
                 )}
+              </div>
+            )}
+
+            {isDocumentPublication && !hasFileDescriptor && (
+              <div className="rounded-lg border border-white bg-black p-6">
+                <h2 className="mb-4 text-xl font-bold">Document Download</h2>
+                <p className="mb-3 text-sm text-gray-400">
+                  Original uploaded file is unavailable for this publication record.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={downloadCanonicalizedDocumentText}
+                    className="inline-block rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    Download Document Text
+                  </button>
+                  <a
+                    href={`/api/publications/${publication.id}/content`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    Open Full Content
+                  </a>
+                </div>
               </div>
             )}
 
