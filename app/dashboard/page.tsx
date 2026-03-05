@@ -29,6 +29,20 @@ export default function DashboardPage() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   const loadPublications = useCallback(async (withSync = false) => {
     if (!address) return;
@@ -227,6 +241,28 @@ export default function DashboardPage() {
     }
   };
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const renderReturnToTopButton = () => {
+    if (!showScrollTop) {
+      return null;
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={scrollToTop}
+        className="fixed bottom-6 right-6 z-50 flex h-12 w-12 items-center justify-center rounded-full border border-white bg-black text-white shadow-lg transition hover:bg-white hover:text-black"
+        aria-label="Return to top"
+        title="Return to top"
+      >
+        <span aria-hidden="true" className="text-xl leading-none">↑</span>
+      </button>
+    );
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -242,6 +278,7 @@ export default function DashboardPage() {
             <p className="text-gray-400">Loading...</p>
           </div>
         </div>
+        {renderReturnToTopButton()}
       </main>
     );
   }
@@ -294,6 +331,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        {renderReturnToTopButton()}
       </main>
     );
   }
@@ -545,6 +583,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      {renderReturnToTopButton()}
     </main>
   );
 }

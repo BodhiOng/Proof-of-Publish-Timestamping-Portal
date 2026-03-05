@@ -12,6 +12,20 @@ import {
 
 type ContentType = "text" | "article" | "code" | "document" | "image" | "audio" | "video";
 
+const DEFAULT_MAX_CANONICALIZED_PREVIEW_BYTES = 120_000;
+const MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE: Partial<Record<ContentType, number>> = {
+  audio: 20 * 1024 * 1024,
+  video: 50 * 1024 * 1024,
+};
+
+const MAX_EMBED_FILE_SIZE_BY_TYPE: Partial<Record<ContentType, number>> = {
+  code: 8 * 1024 * 1024,
+  document: 24 * 1024 * 1024,
+  image: 24 * 1024 * 1024,
+  audio: 500 * 1024 * 1024,
+  video: 1024 * 1024 * 1024,
+};
+
 const CODE_EXTENSIONS = new Set([
   ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".go", ".rs", ".php", ".rb", ".sol", ".json", ".xml", ".html", ".css", ".scss", ".sh", ".bat", ".ps1", ".md",
 ]);
@@ -19,6 +33,56 @@ const CODE_EXTENSIONS = new Set([
 const DOCUMENT_EXTENSIONS = new Set([
   ".pdf", ".doc", ".docx", ".txt", ".md", ".rtf", ".odt",
 ]);
+
+const IMAGE_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".ico", ".avif",
+]);
+
+const VIDEO_EXTENSIONS = new Set([
+  ".mp4", ".webm", ".mov", ".mkv", ".avi", ".wmv", ".m4v", ".mpeg", ".mpg", ".3gp",
+]);
+
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".bmp": "image/bmp",
+  ".tiff": "image/tiff",
+  ".ico": "image/x-icon",
+  ".avif": "image/avif",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+  ".wmv": "video/x-ms-wmv",
+  ".m4v": "video/x-m4v",
+  ".mpeg": "video/mpeg",
+  ".mpg": "video/mpeg",
+  ".3gp": "video/3gpp",
+};
+
+function resolveMimeType(file: File): string {
+  const existing = (file.type || "").trim().toLowerCase();
+  if (existing) return existing;
+  const extension = getFileExtension(file.name);
+  return EXTENSION_MIME_MAP[extension] || "application/octet-stream";
+}
+
+function formatFileSize(value: number): string {
+  if (value >= 1024 * 1024 * 1024) {
+    return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return `${Math.max(1, Math.round(value / 1024))} KB`;
+}
 
 function getFileExtension(fileName: string): string {
   const index = fileName.lastIndexOf(".");
@@ -49,7 +113,7 @@ function isFileAllowedForContentType(file: File, selectedType: ContentType): boo
   }
 
   if (selectedType === "image") {
-    return mime.startsWith("image/");
+    return mime.startsWith("image/") || IMAGE_EXTENSIONS.has(extension);
   }
 
   if (selectedType === "audio") {
@@ -57,7 +121,7 @@ function isFileAllowedForContentType(file: File, selectedType: ContentType): boo
   }
 
   if (selectedType === "video") {
-    return mime.startsWith("video/");
+    return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(extension);
   }
 
   return true;
@@ -70,6 +134,7 @@ export default function PublishPage() {
   const [title, setTitle] = useState("");
   const [hasFilledTitleBefore, setHasFilledTitleBefore] = useState(false);
   const [content, setContent] = useState("");
+  const [filePayload, setFilePayload] = useState("");
   const [contentType, setContentType] = useState<ContentType>("text");
   const [sourceUrl, setSourceUrl] = useState("");
   const [parentHash, setParentHash] = useState("");
@@ -121,6 +186,9 @@ export default function PublishPage() {
             : contentType === "video"
               ? "Any video format (e.g. .mp4, .webm, .mov, .mkv)"
               : "";
+  const uploadSizeLimitText = MAX_EMBED_FILE_SIZE_BY_TYPE[contentType]
+    ? `Max file size: ${formatFileSize(MAX_EMBED_FILE_SIZE_BY_TYPE[contentType] as number)}`
+    : "";
 
   const handlePreview = async () => {
     setError("");
@@ -131,7 +199,12 @@ export default function PublishPage() {
     }
 
     try {
-      const data = await canonicalizePublicationContent(content);
+      const canonicalizationInput = supportsFileUpload ? filePayload : content;
+      if (!canonicalizationInput.trim()) {
+        throw new Error("No content available to canonicalize");
+      }
+
+      const data = await canonicalizePublicationContent(canonicalizationInput);
 
       setCanonicalizedContent(data.canonicalizedContent);
       setComputedHash(data.contentHash);
@@ -204,6 +277,20 @@ export default function PublishPage() {
       setUploadedFileName("");
       setUploadProgress(0);
       setContent("");
+      setFilePayload("");
+      event.target.value = "";
+      return;
+    }
+
+    const uploadSizeLimit = MAX_EMBED_FILE_SIZE_BY_TYPE[contentType];
+    if (uploadSizeLimit && file.size > uploadSizeLimit) {
+      const warningMessage = `${file.name} is too large (${formatFileSize(file.size)}). Limit for ${contentType} is ${formatFileSize(uploadSizeLimit)}.`;
+      setUploadWarning(warningMessage);
+      setError("File is too large to process safely in browser memory");
+      setUploadedFileName("");
+      setUploadProgress(0);
+      setContent("");
+      setFilePayload("");
       event.target.value = "";
       return;
     }
@@ -240,6 +327,7 @@ export default function PublishPage() {
 
       let fileContent = "";
 
+      const resolvedMimeType = resolveMimeType(file);
       const bytes = await readFileWithProgress<ArrayBuffer>("arrayBuffer");
       const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
       const hashHex = Array.from(new Uint8Array(hashBuffer))
@@ -247,17 +335,27 @@ export default function PublishPage() {
         .join("");
 
       // Persist full file data so publication details can always provide downloads.
-      const previewDataUrl = await readFileWithProgress<string>("dataUrl");
+      const previewDataUrlRaw = await readFileWithProgress<string>("dataUrl");
+      const previewDataUrl = previewDataUrlRaw.startsWith("data:application/octet-stream")
+        && resolvedMimeType !== "application/octet-stream"
+        ? previewDataUrlRaw.replace(/^data:application\/octet-stream/i, `data:${resolvedMimeType}`)
+        : previewDataUrlRaw;
 
       fileContent = [
         `FILE:${file.name}`,
-        `TYPE:${file.type || "application/octet-stream"}`,
+        `TYPE:${resolvedMimeType}`,
         `SIZE:${file.size}`,
         `SHA256:0x${hashHex}`,
         `DATAURL:${previewDataUrl}`,
       ].join("\n");
 
-      setContent(fileContent);
+      setFilePayload(fileContent);
+      setContent([
+        `FILE:${file.name}`,
+        `TYPE:${resolvedMimeType}`,
+        `SIZE:${file.size}`,
+        `SHA256:0x${hashHex}`,
+      ].join("\n"));
       if (!title.trim() && !hasFilledTitleBefore) {
         setTitle(file.name.replace(/\.[^/.]+$/, ""));
       }
@@ -265,6 +363,7 @@ export default function PublishPage() {
     } catch (err) {
       setUploadProgress(0);
       setError(err instanceof Error ? err.message : "Failed to load uploaded file");
+      setFilePayload("");
     } finally {
       setIsUploadingFile(false);
     }
@@ -286,6 +385,7 @@ export default function PublishPage() {
     try {
       const data = await scrapePublicationSource(sourceUrl.trim());
       setContent(data.content);
+      setFilePayload("");
       if (!title.trim() && data.title) {
         setTitle(data.title);
       }
@@ -299,6 +399,10 @@ export default function PublishPage() {
   };
 
   const isUploadComplete = !isUploadingFile && uploadProgress === 100;
+  const canonicalizedContentSizeBytes = new TextEncoder().encode(canonicalizedContent).length;
+  const canonicalizedPreviewLimitBytes = MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE[contentType]
+    ?? DEFAULT_MAX_CANONICALIZED_PREVIEW_BYTES;
+  const isCanonicalizedPreviewTooLarge = canonicalizedContentSizeBytes > canonicalizedPreviewLimitBytes;
 
   // Loading state
   if (isLoading) {
@@ -430,6 +534,7 @@ export default function PublishPage() {
                     setContentType(e.target.value as ContentType);
                     setUploadedFileName("");
                     setContent("");
+                    setFilePayload("");
                     setCanonicalizedContent("");
                     setComputedHash("");
                     setUploadProgress(0);
@@ -475,6 +580,9 @@ export default function PublishPage() {
                   <p className="mt-1 text-xs text-gray-400">
                     Accepted formats: {acceptedFormatsLabel}
                   </p>
+                  {uploadSizeLimitText && (
+                    <p className="mt-1 text-xs text-gray-400">{uploadSizeLimitText}</p>
+                  )}
                   {uploadWarning && (
                     <p className="mt-1 text-xs font-bold text-white">⚠ {uploadWarning}</p>
                   )}
@@ -509,7 +617,10 @@ export default function PublishPage() {
                 <textarea
                   id="content"
                   value={content}
-                  onChange={(e) => setContent(e.target.value)}
+                  onChange={(e) => {
+                    setContent(e.target.value);
+                    setFilePayload("");
+                  }}
                   readOnly={isContentReadOnly}
                   className="w-full rounded border border-gray-700 bg-black px-3 py-2 font-mono text-sm text-white focus:border-white focus:outline-none read-only:cursor-not-allowed read-only:opacity-80"
                   rows={12}
@@ -596,11 +707,17 @@ export default function PublishPage() {
               
               {canonicalizedContent ? (
                 <>
-                  <div className="mb-4 max-h-[320px] overflow-y-auto rounded border border-gray-700 bg-black p-4">
-                    <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
-                      {canonicalizedContent}
-                    </pre>
-                  </div>
+                  {isCanonicalizedPreviewTooLarge ? (
+                    <div className="mb-4 rounded border border-gray-700 bg-black p-4 text-sm text-gray-300">
+                      Canonicalized content will not be previewed because it is too large ({formatFileSize(canonicalizedContentSizeBytes)}). Preview limit for {contentType} is {formatFileSize(canonicalizedPreviewLimitBytes)}.
+                    </div>
+                  ) : (
+                    <div className="mb-4 max-h-[320px] overflow-y-auto rounded border border-gray-700 bg-black p-4">
+                      <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
+                        {canonicalizedContent}
+                      </pre>
+                    </div>
+                  )}
                   
                   {/* Hash Display */}
                   <div className="space-y-2">

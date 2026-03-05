@@ -28,6 +28,11 @@ type ParsedFileDescriptor = {
   dataUrl?: string;
 };
 
+const MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE: Record<"audio" | "video", number> = {
+  audio: 20 * 1024 * 1024,
+  video: 50 * 1024 * 1024,
+};
+
 function parseFileDescriptor(content: string): ParsedFileDescriptor {
   const fileName = content.match(/FILE:(.+)/)?.[1]?.trim();
   const mimeType = content.match(/TYPE:(.+)/)?.[1]?.trim();
@@ -52,6 +57,12 @@ function formatBytes(sizeText?: string): string {
   }
 
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function parseBytes(sizeText?: string): number | null {
+  if (!sizeText) return null;
+  const parsed = Number.parseInt(sizeText, 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function maskHash(value: string): string {
@@ -152,6 +163,16 @@ export default function PublicationDetailPage({
   const parsedFile = parseFileDescriptor(publication.canonicalizedContent);
   const hasFileDescriptor = Boolean(parsedFile.fileName && parsedFile.mimeType);
   const isDocumentPublication = publication.contentType === "document";
+  const isAudioOrVideoPublication = publication.contentType === "audio" || publication.contentType === "video";
+  const parsedFileSizeBytes = parseBytes(parsedFile.sizeText);
+  const canonicalizedPreviewLimit = isAudioOrVideoPublication
+    ? MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE[publication.contentType]
+    : null;
+  const isCanonicalizedPreviewTooLarge =
+    isAudioOrVideoPublication
+    && parsedFileSizeBytes !== null
+    && canonicalizedPreviewLimit !== null
+    && parsedFileSizeBytes > canonicalizedPreviewLimit;
   const canonicalizedContentDisplay = publication.canonicalizedContent
     .replace(/\n?DATAURL:data:[^\n]+/g, "")
     .trim();
@@ -273,9 +294,15 @@ export default function PublicationDetailPage({
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-xl font-bold">Canonicalized Content</h2>
               <div className="rounded border border-gray-700 bg-black p-4">
-                <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
-                  {canonicalizedContentDisplay}
-                </pre>
+                {isCanonicalizedPreviewTooLarge ? (
+                  <p className="text-sm text-gray-300">
+                    Canonicalized content will not be previewed here because this {publication.contentType} upload is too large ({formatBytes(parsedFile.sizeText)}). Use "Show Full Content" if needed.
+                  </p>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
+                    {canonicalizedContentDisplay}
+                  </pre>
+                )}
               </div>
               <div className="mt-3 flex justify-end">
                 <a
