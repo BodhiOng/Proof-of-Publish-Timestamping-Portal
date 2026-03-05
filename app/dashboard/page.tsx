@@ -5,6 +5,8 @@ import { type MouseEvent, useCallback, useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { deletePublication, getPublications as fetchPublications } from "@/lib/api-client";
 
+const DEFAULT_PAGE_SIZE = 10;
+
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
   id: string;
@@ -29,7 +31,13 @@ export default function DashboardPage() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalPublications, setTotalPublications] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -44,6 +52,18 @@ export default function DashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
   const loadPublications = useCallback(async (withSync = false) => {
     if (!address) return;
 
@@ -51,23 +71,34 @@ export default function DashboardPage() {
       setIsFetching(true);
       const data = await fetchPublications({
         wallet: address,
-        limit: 100,
+        search: debouncedSearchTerm || undefined,
+        page: currentPage,
+        limit: pageSize,
         sync: withSync,
       });
 
       setPublications(data.publications || []);
+      setTotalPublications(data.pagination?.total ?? 0);
+      setTotalPages(data.pagination?.totalPages ?? 1);
+
+      if (data.pagination && currentPage > data.pagination.totalPages && data.pagination.totalPages > 0) {
+        setCurrentPage(data.pagination.totalPages);
+      }
+
       setFetchError("");
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : "Failed to load publications");
     } finally {
       setIsFetching(false);
     }
-  }, [address]);
+  }, [address, currentPage, pageSize, debouncedSearchTerm]);
 
   useEffect(() => {
     if (!isConnected || !address) {
       setPublications([]);
       setSelectedPublicationIds([]);
+      setTotalPublications(0);
+      setTotalPages(1);
       return;
     }
 
@@ -79,16 +110,12 @@ export default function DashboardPage() {
     return () => window.clearInterval(interval);
   }, [isConnected, address, loadPublications]);
 
-  const filteredPublications = publications.filter((pub) => {
-    const matchesSearch = 
-      pub.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pub.contentHash.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
-
-  const filteredIds = filteredPublications.map((publication) => publication.id);
+  const filteredIds = publications.map((publication) => publication.id);
   const hasSelections = selectedPublicationIds.length > 0;
   const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedPublicationIds.includes(id));
+  const safeTotalPages = Math.max(totalPages, 1);
+  const paginationStart = totalPublications === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const paginationEnd = Math.min(totalPublications, currentPage * pageSize);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -169,8 +196,8 @@ export default function DashboardPage() {
     try {
       setDeletingId(publicationId);
       await deletePublication(publicationId, address);
-      setPublications((current) => current.filter((pub) => pub.id !== publicationId));
       setSelectedPublicationIds((current) => current.filter((id) => id !== publicationId));
+      await loadPublications(true);
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : "Failed to delete publication");
     } finally {
@@ -193,10 +220,6 @@ export default function DashboardPage() {
     }
 
     setSelectedPublicationIds((current) => Array.from(new Set([...current, ...filteredIds])));
-  };
-
-  const handleClearSelection = () => {
-    setSelectedPublicationIds([]);
   };
 
   const toggleSelectMode = () => {
@@ -232,13 +255,24 @@ export default function DashboardPage() {
         await deletePublication(publicationId, address);
       }
 
-      setPublications((current) => current.filter((pub) => !idsToDelete.includes(pub.id)));
       setSelectedPublicationIds([]);
+      await loadPublications(true);
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : "Failed to delete selected publications");
     } finally {
       setIsBulkDeleting(false);
     }
+  };
+
+  const handlePageJump = () => {
+    const parsed = Number.parseInt(pageInput, 10);
+    if (Number.isNaN(parsed)) {
+      setPageInput(String(currentPage));
+      return;
+    }
+
+    const clamped = Math.min(safeTotalPages, Math.max(1, parsed));
+    setCurrentPage(clamped);
   };
 
   const scrollToTop = () => {
@@ -358,9 +392,9 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[300px_1fr]">
+        <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]">
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
             {/* Wallet Info */}
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-lg font-bold">Wallet Status</h2>
@@ -396,7 +430,7 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">Total Publications</span>
-                  <span className="font-bold text-white">{publications.length}</span>
+                  <span className="font-bold text-white">{totalPublications}</span>
                 </div>
               </div>
             </div>
@@ -421,7 +455,10 @@ export default function DashboardPage() {
                     id="search"
                     type="text"
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-sm text-white focus:border-white focus:outline-none"
                     placeholder="Search by title or hash..."
                   />
@@ -433,7 +470,7 @@ export default function DashboardPage() {
                   onClick={toggleSelectMode}
                   className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
                 >
-                  {isSelectMode ? "Hide Checkboxes" : "Toggle Select"}
+                  {isSelectMode ? "Done" : "Select"}
                 </button>
 
                 {isSelectMode && (
@@ -442,21 +479,14 @@ export default function DashboardPage() {
                   onClick={handleSelectAllFiltered}
                   className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
                 >
-                  {allFilteredSelected ? "Unselect All" : "Select All"}
-                </button>
-                <button
-                  onClick={handleClearSelection}
-                  disabled={!hasSelections}
-                  className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
-                >
-                  Clear Selection
+                  {allFilteredSelected ? "Unselect" : "All"}
                 </button>
                 <button
                   onClick={handleDeleteSelected}
                   disabled={!hasSelections || isBulkDeleting}
                   className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
                 >
-                  {isBulkDeleting ? "Deleting Selected..." : `Delete Selected (${selectedPublicationIds.length})`}
+                  {isBulkDeleting ? "Deleting..." : `Delete (${selectedPublicationIds.length})`}
                 </button>
                   </>
                 )}
@@ -465,12 +495,12 @@ export default function DashboardPage() {
 
             {/* Publications List */}
             <div className="space-y-4">
-              {filteredPublications.length === 0 ? (
+              {publications.length === 0 ? (
                 <div className="rounded-lg border border-gray-700 bg-black p-12 text-center">
-                  <p className="text-gray-400">No publications found</p>
+                  <p className="text-gray-400">{isFetching ? "Loading publications..." : "No publications found"}</p>
                 </div>
               ) : (
-                filteredPublications.map((pub) => (
+                publications.map((pub) => (
                   <div
                     key={pub.id}
                     className={`relative rounded-lg border border-white bg-black p-6 transition-colors ${isSelectMode ? "cursor-pointer hover:bg-white/5" : ""}`}
@@ -480,7 +510,7 @@ export default function DashboardPage() {
                       }
 
                       const target = event.target as HTMLElement;
-                      if (target.closest("button,a,input,textarea,select,label")) {
+                      if (target.closest("button,a,input,textarea,select,label,summary,details")) {
                         return;
                       }
 
@@ -506,8 +536,10 @@ export default function DashboardPage() {
 
                       <div className="mb-4 space-y-2 text-xs">
                         <div>
-                          <p className="text-gray-400">Content Hash</p>
-                          <div className="flex items-center gap-2">
+                          <div className="mb-1 flex items-center gap-2">
+                            <p className="text-gray-400">Content Hash</p>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
                             <code className="flex-1 truncate text-white">{pub.contentHash}</code>
                             <button
                               onClick={() => copyToClipboard(pub.contentHash)}
@@ -540,45 +572,120 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
                         <Link
                           href={`/publication/${pub.id}`}
                           className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
                         >
                           View Details
                         </Link>
-                        <button
-                          onClick={() => copyToClipboard(pub.contentHash)}
-                          className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
-                        >
-                          Copy Hash
-                        </button>
-                        <button
-                          onClick={() => downloadProof(pub)}
-                          className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
-                        >
-                          Download Proof
-                        </button>
-                        <button
-                          onClick={() => handleDeletePublication(pub.id)}
-                          disabled={deletingId === pub.id || isBulkDeleting}
-                          className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
-                        >
-                          {deletingId === pub.id ? "Deleting..." : "Delete"}
-                        </button>
-                        {pub.status === "CONFIRMED" && (
-                          <Link
-                            href={`/publish?parent=${pub.contentHash}`}
-                            className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
-                          >
-                            Create New Version
-                          </Link>
-                        )}
+
+                        <details className="relative">
+                          <summary className="cursor-pointer list-none rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white">
+                            More
+                          </summary>
+                          <div className="absolute right-0 z-10 mt-2 min-w-[180px] space-y-1 rounded border border-gray-700 bg-black p-2">
+                            {pub.status === "CONFIRMED" && (
+                              <Link
+                                href={`/publish?parent=${pub.contentHash}`}
+                                className="block rounded px-2 py-1 text-xs text-white hover:bg-white hover:text-black"
+                              >
+                                Create New Version
+                              </Link>
+                            )}
+                            <button
+                              onClick={() => handleDeletePublication(pub.id)}
+                              disabled={deletingId === pub.id || isBulkDeleting}
+                              className="block w-full rounded px-2 py-1 text-left text-xs text-white hover:bg-white hover:text-black disabled:text-gray-600"
+                            >
+                              {deletingId === pub.id ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        </details>
                       </div>
                     </div>
                   </div>
                 ))
               )}
+            </div>
+
+            <div className="rounded-lg border border-gray-700 bg-black p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <p className="text-xs text-gray-400">
+                  Showing {paginationStart}-{paginationEnd} of {totalPublications}
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <label htmlFor="pageSize" className="text-gray-400">Per page</label>
+                  <select
+                    id="pageSize"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number.parseInt(e.target.value, 10));
+                      setCurrentPage(1);
+                    }}
+                    className="rounded border border-gray-700 bg-black px-2 py-1 text-white focus:border-white focus:outline-none"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage <= 1 || isFetching}
+                    className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                    title="First page"
+                    aria-label="First page"
+                  >
+                    «
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
+                    disabled={currentPage <= 1 || isFetching}
+                    className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                  >
+                    Prev
+                  </button>
+
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={pageInput}
+                    onChange={(e) => setPageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handlePageJump();
+                      }
+                    }}
+                    onBlur={handlePageJump}
+                    className="w-16 rounded border border-gray-700 bg-black px-2 py-1 text-center text-white focus:border-white focus:outline-none"
+                    aria-label="Page number"
+                  />
+                  <span className="text-gray-400">/ {safeTotalPages}</span>
+
+                  <button
+                    onClick={() => setCurrentPage((current) => Math.min(safeTotalPages, current + 1))}
+                    disabled={currentPage >= totalPages || isFetching}
+                    className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                  >
+                    Next
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentPage(safeTotalPages)}
+                    disabled={currentPage >= totalPages || isFetching}
+                    className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                    title="Last page"
+                    aria-label="Last page"
+                  >
+                    »
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
