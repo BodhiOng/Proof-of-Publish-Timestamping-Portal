@@ -238,34 +238,24 @@ export default function PublishPage() {
         }
       });
 
-      const isCodeFile = contentType === "code";
-
       let fileContent = "";
 
-      if (isCodeFile) {
-        const text = await readFileWithProgress<string>("text");
-        if (!text) {
-          throw new Error("Uploaded file did not produce readable content");
-        }
-        fileContent = text;
-      } else {
-        const bytes = await readFileWithProgress<ArrayBuffer>("arrayBuffer");
-        const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
-        const hashHex = Array.from(new Uint8Array(hashBuffer))
-          .map((value) => value.toString(16).padStart(2, "0"))
-          .join("");
+      const bytes = await readFileWithProgress<ArrayBuffer>("arrayBuffer");
+      const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+      const hashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("");
 
-        // Persist full file data so publication details can always render previews.
-        const previewDataUrl = await readFileWithProgress<string>("dataUrl");
+      // Persist full file data so publication details can always provide downloads.
+      const previewDataUrl = await readFileWithProgress<string>("dataUrl");
 
-        fileContent = [
-          `FILE:${file.name}`,
-          `TYPE:${file.type || "application/octet-stream"}`,
-          `SIZE:${file.size}`,
-          `SHA256:0x${hashHex}`,
-          `DATAURL:${previewDataUrl}`,
-        ].join("\n");
-      }
+      fileContent = [
+        `FILE:${file.name}`,
+        `TYPE:${file.type || "application/octet-stream"}`,
+        `SIZE:${file.size}`,
+        `SHA256:0x${hashHex}`,
+        `DATAURL:${previewDataUrl}`,
+      ].join("\n");
 
       setContent(fileContent);
       if (!title.trim() && !hasFilledTitleBefore) {

@@ -236,7 +236,7 @@ export default function PublicationDetailPage({
                       download={parsedFile.fileName}
                       className="inline-block rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
                     >
-                      Download Uploaded File
+                      {publication.contentType === "code" ? "Download Code File" : "Download Uploaded File"}
                     </a>
                   </div>
                 )}
