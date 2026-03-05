@@ -264,6 +264,34 @@ export default function PublishPage() {
     navigator.clipboard.writeText(text);
   };
 
+  const handleClearPublicationDetails = () => {
+    setTitle("");
+    setHasFilledTitleBefore(false);
+    setContent("");
+    setFilePayload("");
+    setContentType("text");
+    setSourceUrl("");
+    setParentHash("");
+    setUploadedFileName("");
+    setIsUploadingFile(false);
+    setUploadProgress(0);
+    setUploadWarning("");
+    setIsSigning(false);
+    setIsScrapingArticle(false);
+    setPublicationStatus(null);
+    setCanonicalizedContent("");
+    setComputedHash("");
+    setShowConfirmModal(false);
+    setTxHash("");
+    setBlockTimestamp("");
+    setPublicationId("");
+    setError("");
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -500,7 +528,17 @@ export default function PublishPage() {
           {/* Left Column: Form */}
           <div className="space-y-6">
             <div className="rounded-lg border border-white bg-black p-6">
-              <h2 className="mb-4 text-xl font-bold">Content Details</h2>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-xl font-bold">Content Details</h2>
+                <button
+                  type="button"
+                  onClick={handleClearPublicationDetails}
+                  disabled={isSigning}
+                  className="rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
+                >
+                  Clear Content for New Publication
+                </button>
+              </div>
               
               {/* Title */}
               <div className="mb-4">
