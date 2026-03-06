@@ -80,22 +80,74 @@ export default function PublicationDetailPage({
   const [publication, setPublication] = useState<Publication | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [newChildVersionId, setNewChildVersionId] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchPublication() {
+    let isMounted = true;
+
+    async function fetchPublication(initialLoad = false) {
       try {
         const data = await getPublicationById(id);
-        setPublication(data);
-        setLoading(false);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setPublication((current) => {
+          // Trigger popup only when a child version appears while viewing this page.
+          if (current && !current.nextVersion && data.nextVersion) {
+            setNewChildVersionId(data.nextVersion);
+          }
+
+          return data;
+        });
+
+        if (initialLoad) {
+          setLoading(false);
+          setError(null);
+        }
       } catch (err) {
+        if (!isMounted) {
+          return;
+        }
+
         const message = err instanceof Error ? err.message : "Failed to load publication";
-        setError(message === "Publication not found" ? message : "Failed to load publication");
-        setLoading(false);
+        if (initialLoad) {
+          setError(message === "Publication not found" ? message : "Failed to load publication");
+          setLoading(false);
+        }
       }
     }
 
-    fetchPublication();
+    fetchPublication(true);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      fetchPublication(false);
+    }, 8000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
   }, [id]);
+
+  useEffect(() => {
+    if (!newChildVersionId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNewChildVersionId(null);
+    }, 10000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [newChildVersionId]);
 
   if (loading) {
     return (
@@ -179,6 +231,30 @@ export default function PublicationDetailPage({
 
   return (
     <main className="min-h-screen bg-black text-white">
+      {newChildVersionId && (
+        <div className="fixed bottom-6 right-6 z-50 w-full max-w-sm rounded-lg border border-white bg-black p-4 shadow-xl">
+          <p className="text-sm font-bold text-white">New Child Version Detected</p>
+          <p className="mt-1 text-xs text-gray-400">
+            This publication just received a new child in the version chain.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Link
+              href={`/publication/${newChildVersionId}`}
+              className="flex-1 rounded border border-white bg-black px-3 py-2 text-center text-xs font-bold text-white hover:bg-white hover:text-black"
+            >
+              Open Child Version
+            </Link>
+            <button
+              type="button"
+              onClick={() => setNewChildVersionId(null)}
+              className="rounded border border-gray-700 bg-black px-3 py-2 text-xs font-bold text-white hover:border-white"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto max-w-6xl px-6 py-12 lg:px-12">
         {/* Header */}
         <div className="mb-8 border-b border-white pb-6">

@@ -831,11 +831,7 @@ export default function PublishPage() {
                 />
                 <datalist id="parentHashSuggestions">
                   {filteredParentHashSuggestions.map((hash) => (
-                    <option
-                      key={hash}
-                      value={hash}
-                      label={parentHashTypeLookup[hash.toLowerCase()] || ""}
-                    />
+                    <option key={hash} value={hash} />
                   ))}
                 </datalist>
                 <p className="mt-1 text-xs text-gray-400">
