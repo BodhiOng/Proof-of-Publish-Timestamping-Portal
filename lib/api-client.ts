@@ -126,6 +126,7 @@ export async function getPublications(query?: {
   wallet?: string;
   status?: PublicationStatus | 'ALL';
   search?: string;
+  sortBy?: 'newest' | 'oldest' | 'title_asc' | 'title_desc' | 'type_asc';
   page?: number;
   limit?: number;
   sync?: boolean;
@@ -134,6 +135,7 @@ export async function getPublications(query?: {
   if (query?.wallet) params.set('wallet', query.wallet);
   if (query?.status) params.set('status', query.status);
   if (query?.search) params.set('search', query.search);
+  if (query?.sortBy) params.set('sortBy', query.sortBy);
   if (query?.page) params.set('page', String(query.page));
   if (query?.limit) params.set('limit', String(query.limit));
   if (query?.sync) params.set('sync', 'true');

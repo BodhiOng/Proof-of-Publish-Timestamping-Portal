@@ -6,6 +6,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { deletePublication, getPublications as fetchPublications } from "@/lib/api-client";
 
 const DEFAULT_PAGE_SIZE = 10;
+type DashboardSort = "newest" | "oldest" | "title_asc" | "title_desc" | "type_asc";
 
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
@@ -31,7 +32,8 @@ export default function DashboardPage() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<DashboardSort>("newest");
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInput, setPageInput] = useState("1");
@@ -55,22 +57,19 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm.trim());
-    }, 300);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [searchTerm]);
-
-  useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
 
   useEffect(() => {
-    // Cache is only valid for the current wallet + search + page size context.
+    // Cache is only valid for the current wallet + search + sort + page size context.
     pageCacheRef.current = {};
     paginationCacheRef.current = null;
-  }, [address, debouncedSearchTerm, pageSize]);
+  }, [address, appliedSearchTerm, sortBy, pageSize]);
+
+  const applySearch = () => {
+    setCurrentPage(1);
+    setAppliedSearchTerm(searchTerm.trim());
+  };
 
   const loadPublications = useCallback(async (withSync = false) => {
     if (!address) return;
@@ -92,7 +91,8 @@ export default function DashboardPage() {
       setIsFetching(true);
       const data = await fetchPublications({
         wallet: address,
-        search: debouncedSearchTerm || undefined,
+        search: appliedSearchTerm || undefined,
+        sortBy,
         page: currentPage,
         limit: pageSize,
         sync: withSync,
@@ -121,7 +121,8 @@ export default function DashboardPage() {
       if (nextPage <= nextTotalPages && !pageCacheRef.current[nextPage]) {
         void fetchPublications({
           wallet: address,
-          search: debouncedSearchTerm || undefined,
+          search: appliedSearchTerm || undefined,
+          sortBy,
           page: nextPage,
           limit: pageSize,
           sync: false,
@@ -140,7 +141,7 @@ export default function DashboardPage() {
     } finally {
       setIsFetching(false);
     }
-  }, [address, currentPage, pageSize, debouncedSearchTerm]);
+  }, [address, currentPage, pageSize, appliedSearchTerm, sortBy]);
 
   useEffect(() => {
     if (!isConnected || !address) {
@@ -148,6 +149,7 @@ export default function DashboardPage() {
       setSelectedPublicationIds([]);
       setTotalPublications(0);
       setTotalPages(1);
+      setAppliedSearchTerm("");
       pageCacheRef.current = {};
       paginationCacheRef.current = null;
       return;
@@ -504,50 +506,87 @@ export default function DashboardPage() {
 
             {/* Filters */}
             <div className="rounded-lg border border-white bg-black p-6">
-              <div className="grid gap-4 md:grid-cols-1">
-                <div>
-                  <label htmlFor="search" className="mb-2 block text-sm font-bold">
-                    Search
-                  </label>
+              <div>
+                <label htmlFor="search" className="mb-2 block text-sm font-bold">
+                  Search
+                </label>
+                <div className="flex gap-2">
                   <input
                     id="search"
                     type="text"
                     value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        applySearch();
+                      }
                     }}
                     className="w-full rounded border border-gray-700 bg-black px-3 py-2 text-sm text-white focus:border-white focus:outline-none"
                     placeholder="Search by title or hash..."
                   />
+                  <button
+                    type="button"
+                    onClick={applySearch}
+                    disabled={isFetching}
+                    className="inline-flex items-center gap-2 rounded border border-white bg-black px-3 py-2 text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
+                    title="Search"
+                    aria-label="Search"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m20 20-3.5-3.5" />
+                    </svg>
+                    <span className="hidden sm:inline">Search</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={toggleSelectMode}
-                  className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
-                >
-                  {isSelectMode ? "Done" : "Select"}
-                </button>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">Sort</span>
+                  <select
+                    id="sortBy"
+                    value={sortBy}
+                    onChange={(e) => {
+                      setSortBy(e.target.value as DashboardSort);
+                      setCurrentPage(1);
+                    }}
+                    className="min-w-[170px] rounded border border-gray-700 bg-black px-3 py-1.5 text-xs font-semibold text-white focus:border-white focus:outline-none"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="title_asc">Title A-Z</option>
+                    <option value="title_desc">Title Z-A</option>
+                    <option value="type_asc">Type A-Z</option>
+                  </select>
+                </div>
 
-                {isSelectMode && (
-                  <>
-                <button
-                  onClick={handleSelectAllFiltered}
-                  className="rounded border border-white bg-black px-3 py-1 text-xs font-bold text-white hover:bg-white hover:text-black"
-                >
-                  {allFilteredSelected ? "Unselect" : "All"}
-                </button>
-                <button
-                  onClick={handleDeleteSelected}
-                  disabled={!hasSelections || isBulkDeleting}
-                  className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
-                >
-                  {isBulkDeleting ? "Deleting..." : `Delete (${selectedPublicationIds.length})`}
-                </button>
-                  </>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={toggleSelectMode}
+                    className="rounded border border-white bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    {isSelectMode ? "Done" : "Select"}
+                  </button>
+
+                  {isSelectMode && (
+                    <>
+                  <button
+                    onClick={handleSelectAllFiltered}
+                    className="rounded border border-white bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    {allFilteredSelected ? "Unselect" : "All"}
+                  </button>
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={!hasSelections || isBulkDeleting}
+                    className="rounded border border-gray-700 bg-black px-3 py-1.5 text-xs font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                  >
+                    {isBulkDeleting ? "Deleting..." : `Delete (${selectedPublicationIds.length})`}
+                  </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 

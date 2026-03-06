@@ -11,6 +11,17 @@ import {
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
+const DEFAULT_SORT = 'newest';
+
+type PublicationsSort = 'newest' | 'oldest' | 'title_asc' | 'title_desc' | 'type_asc';
+
+function parseSort(value: string | null): PublicationsSort {
+  if (value === 'oldest' || value === 'title_asc' || value === 'title_desc' || value === 'type_asc') {
+    return value;
+  }
+
+  return DEFAULT_SORT;
+}
 
 function parsePositiveInt(value: string | null, fallback: number): number {
   if (!value) return fallback;
@@ -25,6 +36,7 @@ export async function GET(request: NextRequest) {
     const wallet = searchParams.get('wallet');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const sortBy = parseSort(searchParams.get('sortBy'));
     const page = parsePositiveInt(searchParams.get('page'), DEFAULT_PAGE);
     const requestedLimit = parsePositiveInt(searchParams.get('limit'), DEFAULT_LIMIT);
     const limit = Math.min(requestedLimit, MAX_LIMIT);
@@ -51,10 +63,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Sort by creation date (newest first)
-    publications.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    if (sortBy === 'oldest') {
+      publications.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    } else if (sortBy === 'title_asc') {
+      publications.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortBy === 'title_desc') {
+      publications.sort((a, b) => b.title.localeCompare(a.title));
+    } else if (sortBy === 'type_asc') {
+      publications.sort((a, b) => a.contentType.localeCompare(b.contentType));
+    } else {
+      // Default: newest first
+      publications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
 
     const total = publications.length;
     const start = (page - 1) * limit;

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import {
@@ -128,9 +129,28 @@ function isFileAllowedForContentType(file: File, selectedType: ContentType): boo
   return true;
 }
 
+function parseContentType(value: string): ContentType | null {
+  const normalized = value.toLowerCase();
+  if (
+    normalized === "text"
+    || normalized === "article"
+    || normalized === "code"
+    || normalized === "document"
+    || normalized === "image"
+    || normalized === "audio"
+    || normalized === "video"
+  ) {
+    return normalized as ContentType;
+  }
+
+  return null;
+}
+
 export default function PublishPage() {
   const { isConnected, address, isLoading } = useWallet();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastAppliedParentPrefillRef = useRef("");
   
   const [title, setTitle] = useState("");
   const [hasFilledTitleBefore, setHasFilledTitleBefore] = useState(false);
@@ -193,6 +213,7 @@ export default function PublishPage() {
   const uploadSizeLimitText = MAX_EMBED_FILE_SIZE_BY_TYPE[contentType]
     ? `Max file size: ${formatFileSize(MAX_EMBED_FILE_SIZE_BY_TYPE[contentType] as number)}`
     : "";
+  const parentHashFromQuery = (searchParams.get("parent") || "").trim();
 
   useEffect(() => {
     let isMounted = true;
@@ -282,6 +303,64 @@ export default function PublishPage() {
 
     return exactMatch.contentType;
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const applyParentPrefill = async () => {
+      if (!parentHashFromQuery) {
+        return;
+      }
+
+      const normalizedHash = normalizeHash(parentHashFromQuery);
+      if (lastAppliedParentPrefillRef.current !== normalizedHash) {
+        lastAppliedParentPrefillRef.current = normalizedHash;
+        setParentHash(parentHashFromQuery);
+      }
+
+      const cachedType = parentHashTypeLookup[normalizedHash];
+      if (cachedType) {
+        const parsedType = parseContentType(cachedType);
+        if (parsedType) {
+          setContentType(parsedType);
+        }
+        return;
+      }
+
+      try {
+        const data = await getPublications({ search: normalizedHash, limit: 50 });
+        if (!isMounted) {
+          return;
+        }
+
+        const exactMatch = (data.publications || []).find(
+          (publication) => publication.contentHash.toLowerCase() === normalizedHash
+        );
+
+        if (!exactMatch) {
+          return;
+        }
+
+        setParentHashTypeLookup((current) => ({
+          ...current,
+          [normalizedHash]: exactMatch.contentType,
+        }));
+
+        const parsedType = parseContentType(exactMatch.contentType);
+        if (parsedType) {
+          setContentType(parsedType);
+        }
+      } catch {
+        // Keep silent fallback: prefill hash even if type lookup fails.
+      }
+    };
+
+    void applyParentPrefill();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [parentHashFromQuery, parentHashTypeLookup]);
 
   const handlePreview = async () => {
     setError("");
