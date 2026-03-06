@@ -212,13 +212,34 @@ export default function PublicationDetailPage({
     URL.revokeObjectURL(url);
   };
 
+  const downloadCanonicalizedContentText = () => {
+    const fileBaseName = (publication.title || "canonicalized-content")
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "canonicalized-content";
+
+    const blob = new Blob([canonicalizedContentDisplay], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${fileBaseName}-canonicalized.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const parsedFile = parseFileDescriptor(publication.canonicalizedContent);
   const hasFileDescriptor = Boolean(parsedFile.fileName && parsedFile.mimeType);
   const isDocumentPublication = publication.contentType === "document";
   const isAudioOrVideoPublication = publication.contentType === "audio" || publication.contentType === "video";
+  const audioOrVideoType = publication.contentType === "audio" || publication.contentType === "video"
+    ? publication.contentType
+    : null;
   const parsedFileSizeBytes = parseBytes(parsedFile.sizeText);
-  const canonicalizedPreviewLimit = isAudioOrVideoPublication
-    ? MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE[publication.contentType]
+  const canonicalizedPreviewLimit = audioOrVideoType
+    ? MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE[audioOrVideoType]
     : null;
   const isCanonicalizedPreviewTooLarge =
     isAudioOrVideoPublication
@@ -228,6 +249,7 @@ export default function PublicationDetailPage({
   const canonicalizedContentDisplay = publication.canonicalizedContent
     .replace(/\n?DATAURL:data:[^\n]+/g, "")
     .trim();
+  const useScrollableCanonicalizedWindow = publication.contentType === "text" || publication.contentType === "article";
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -267,13 +289,13 @@ export default function PublicationDetailPage({
           </p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,2fr)_360px]">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           {/* Main Content */}
           <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
             {/* Uploaded File Preview */}
             {hasFileDescriptor && (
               <div className="rounded-lg border border-white bg-black p-6">
-                <h2 className="mb-4 text-xl font-bold">Uploaded File Preview</h2>
+                <h2 className="mb-4 text-xl font-bold">{isDocumentPublication ? "Uploaded File" : "Uploaded File Preview"}</h2>
 
                 <div className="mb-4 rounded border border-gray-700 bg-black p-4 text-sm">
                   <p className="text-white"><span className="font-bold text-gray-400">Name:</span> {parsedFile.fileName}</p>
@@ -289,12 +311,6 @@ export default function PublicationDetailPage({
                 {!parsedFile.dataUrl && (
                   <div className="rounded border border-gray-700 bg-black p-4 text-sm text-gray-400">
                     Inline preview unavailable for this publication (inline file data not stored).
-                  </div>
-                )}
-
-                {parsedFile.dataUrl && isDocumentPublication && (
-                  <div className="rounded border border-gray-700 bg-black p-4 text-sm text-gray-400">
-                    Document preview is disabled. Use the download button below.
                   </div>
                 )}
 
@@ -375,12 +391,23 @@ export default function PublicationDetailPage({
                     Canonicalized content will not be previewed here because this {publication.contentType} upload is too large ({formatBytes(parsedFile.sizeText)}). Use "Show Full Content" if needed.
                   </p>
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
-                    {canonicalizedContentDisplay}
-                  </pre>
+                  <div className={useScrollableCanonicalizedWindow ? "max-h-[320px] overflow-y-auto" : ""}>
+                    <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">
+                      {canonicalizedContentDisplay}
+                    </pre>
+                  </div>
                 )}
               </div>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {(publication.contentType === "text" || publication.contentType === "article") && (
+                  <button
+                    type="button"
+                    onClick={downloadCanonicalizedContentText}
+                    className="rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white"
+                  >
+                    Download TXT
+                  </button>
+                )}
                 <a
                   href={`/api/publications/${publication.id}/content`}
                   target="_blank"
@@ -524,12 +551,6 @@ export default function PublicationDetailPage({
             <div className="rounded-lg border border-gray-700 bg-black p-6">
               <h2 className="mb-4 text-lg font-bold">Quick Info</h2>
               <div className="space-y-3 text-xs">
-                <div>
-                  <p className="font-bold text-gray-400">Status</p>
-                  <span className="mt-1 inline-block rounded-full bg-white px-3 py-1 text-xs font-bold text-black">
-                    CONFIRMED
-                  </span>
-                </div>
                 <div>
                   <p className="font-bold text-gray-400">Publication ID</p>
                   <p className="text-white">#{publication.id}</p>

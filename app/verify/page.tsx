@@ -18,6 +18,42 @@ type VerificationResult = {
   }>;
 };
 
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".bmp": "image/bmp",
+  ".tiff": "image/tiff",
+  ".ico": "image/x-icon",
+  ".avif": "image/avif",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+  ".wmv": "video/x-ms-wmv",
+  ".m4v": "video/x-m4v",
+  ".mpeg": "video/mpeg",
+  ".mpg": "video/mpeg",
+  ".3gp": "video/3gpp",
+};
+
+function getFileExtension(fileName: string): string {
+  const index = fileName.lastIndexOf(".");
+  if (index === -1) return "";
+  return fileName.slice(index).toLowerCase();
+}
+
+function resolveMimeType(file: File): string {
+  const existing = (file.type || "").trim().toLowerCase();
+  if (existing) return existing;
+  const extension = getFileExtension(file.name);
+  return EXTENSION_MIME_MAP[extension] || "application/octet-stream";
+}
+
 export default function VerifyPage() {
   const [inputMethod, setInputMethod] = useState<InputMethod>("text");
   const [textContent, setTextContent] = useState("");
@@ -29,15 +65,48 @@ export default function VerifyPage() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState("");
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setTextContent(event.target?.result as string);
-      };
-      reader.readAsText(file);
+    if (!file) {
+      return;
+    }
+
+    setFileName(file.name);
+    setError("");
+    setResult(null);
+
+    try {
+      const resolvedMimeType = resolveMimeType(file);
+      const bytes = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+      const hashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("");
+
+      const previewDataUrlRaw = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+
+      const previewDataUrl = previewDataUrlRaw.startsWith("data:application/octet-stream")
+        && resolvedMimeType !== "application/octet-stream"
+        ? previewDataUrlRaw.replace(/^data:application\/octet-stream/i, `data:${resolvedMimeType}`)
+        : previewDataUrlRaw;
+
+      // Use the same descriptor envelope as publish file uploads for hash parity.
+      const fileDescriptorPayload = [
+        `FILE:${file.name}`,
+        `TYPE:${resolvedMimeType}`,
+        `SIZE:${file.size}`,
+        `SHA256:0x${hashHex}`,
+        `DATAURL:${previewDataUrl}`,
+      ].join("\n");
+
+      setTextContent(fileDescriptorPayload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to process uploaded file");
     }
   };
 
@@ -79,22 +148,6 @@ export default function VerifyPage() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-  };
-
-  const downloadProofPackage = () => {
-    const proof = {
-      content: textContent,
-      hash: result?.hash,
-      timestamp: new Date().toISOString(),
-      verified: false,
-    };
-    
-    const blob = new Blob([JSON.stringify(proof, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `proof-package-${Date.now()}.json`;
-    a.click();
   };
 
   return (
@@ -189,7 +242,7 @@ export default function VerifyPage() {
                     id="file-upload"
                     type="file"
                     onChange={handleFileUpload}
-                    accept=".txt,.md,.json"
+                    accept=".js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sol,.json,.xml,.html,.css,.scss,.sh,.bat,.ps1,.md,.pdf,.doc,.docx,.txt,.rtf,.odt,image/*,audio/*,video/*"
                     className="hidden"
                   />
                   <label
@@ -199,13 +252,13 @@ export default function VerifyPage() {
                     <div>
                       <p className="font-bold text-white">Click to upload</p>
                       <p className="mt-1 text-xs text-gray-400">
-                        {fileName || "Supports .txt, .md, .json files"}
+                        {fileName || "Supports code, document, image, audio, and video files"}
                       </p>
                     </div>
                   </label>
                   {textContent && (
                     <div className="mt-4 rounded border border-gray-700 bg-black p-3">
-                      <p className="text-xs text-gray-400">File loaded ({textContent.length} characters)</p>
+                      <p className="text-xs text-gray-400">File descriptor loaded ({textContent.length} characters)</p>
                     </div>
                   )}
                 </div>
@@ -317,7 +370,7 @@ export default function VerifyPage() {
                       {result.matches.map((match, idx) => (
                         <div key={idx} className="rounded border border-gray-700 bg-black p-4">
                           {match.title && (
-                            <p className="mb-2 font-bold text-white">{match.title}</p>
+                            <p className="mb-2 truncate font-bold text-white" title={match.title}>{match.title}</p>
                           )}
                           
                           <div className="space-y-2 text-xs">
@@ -355,22 +408,12 @@ export default function VerifyPage() {
                     </div>
                   )}
 
-                  {/* No Match - Download Option */}
+                  {/* No Match */}
                   {!result.matched && (
-                    <div className="space-y-3">
-                      <div className="rounded border border-gray-700 bg-black p-4">
-                        <p className="text-sm text-gray-300">
-                          This content hash was not found in the on-chain registry. 
-                          You can download a local proof package for your records.
-                        </p>
-                      </div>
-                      
-                      <button
-                        onClick={downloadProofPackage}
-                        className="w-full rounded-full border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
-                      >
-                        Download Proof Package (Local)
-                      </button>
+                    <div className="rounded border border-gray-700 bg-black p-4">
+                      <p className="text-sm text-gray-300">
+                        This content hash was not found in the on-chain registry.
+                      </p>
                     </div>
                   )}
                 </div>

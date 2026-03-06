@@ -661,7 +661,7 @@ export default function DashboardPage() {
 
                     <div className={isSelectMode ? "pl-10" : ""}>
                       <div className="mb-4">
-                        <h3 className="text-lg font-bold text-white">{pub.title}</h3>
+                        <h3 className="truncate text-lg font-bold text-white" title={pub.title}>{pub.title}</h3>
                         <p className="mt-1 text-sm text-gray-400">{getSnippet(pub)}</p>
                       </div>
 
