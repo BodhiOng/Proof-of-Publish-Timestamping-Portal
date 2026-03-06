@@ -140,6 +140,8 @@ export default function PublishPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [parentHash, setParentHash] = useState("");
   const [availableParentHashes, setAvailableParentHashes] = useState<string[]>([]);
+  const [parentHashTypeLookup, setParentHashTypeLookup] = useState<Record<string, string>>({});
+  const [isValidatingParentHash, setIsValidatingParentHash] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -207,16 +209,26 @@ export default function PublishPage() {
           return;
         }
 
-        const uniqueHashes = Array.from(new Set(
-          (data.publications || [])
-            .map((publication) => publication.contentHash)
-            .filter((hash): hash is string => Boolean(hash))
-        ));
+        const nextLookup: Record<string, string> = {};
+        const uniqueHashes = Array.from(
+          new Set(
+            (data.publications || [])
+              .map((publication) => {
+                const normalizedHash = publication.contentHash?.toLowerCase();
+                if (!normalizedHash) return null;
+                nextLookup[normalizedHash] = publication.contentType;
+                return publication.contentHash;
+              })
+              .filter((hash): hash is string => Boolean(hash))
+          )
+        );
 
         setAvailableParentHashes(uniqueHashes);
+        setParentHashTypeLookup(nextLookup);
       } catch {
         if (isMounted) {
           setAvailableParentHashes([]);
+          setParentHashTypeLookup({});
         }
       }
     };
@@ -241,6 +253,36 @@ export default function PublishPage() {
       .slice(0, 8);
   }, [availableParentHashes, parentHash, computedHash]);
 
+  const normalizeHash = (value: string): string => value.trim().toLowerCase();
+
+  const resolveParentHashType = async (hashValue: string): Promise<string | null> => {
+    const normalizedHash = normalizeHash(hashValue);
+    if (!normalizedHash) {
+      return null;
+    }
+
+    const cachedType = parentHashTypeLookup[normalizedHash];
+    if (cachedType) {
+      return cachedType;
+    }
+
+    const data = await getPublications({ search: normalizedHash, limit: 50 });
+    const exactMatch = (data.publications || []).find(
+      (publication) => publication.contentHash.toLowerCase() === normalizedHash
+    );
+
+    if (!exactMatch) {
+      return null;
+    }
+
+    setParentHashTypeLookup((current) => ({
+      ...current,
+      [normalizedHash]: exactMatch.contentType,
+    }));
+
+    return exactMatch.contentType;
+  };
+
   const handlePreview = async () => {
     setError("");
 
@@ -264,10 +306,33 @@ export default function PublishPage() {
     }
   };
 
-  const handleSignAndRegister = () => {
+  const handleSignAndRegister = async () => {
+    setError("");
+
     if (!isCodeInputValid) {
       setError("For code type, upload a code file first");
       return;
+    }
+
+    if (parentHash.trim()) {
+      try {
+        setIsValidatingParentHash(true);
+        const parentType = await resolveParentHashType(parentHash);
+        if (!parentType) {
+          setError("Parent hash not found. Please pick a valid parent hash or clear the field.");
+          return;
+        }
+
+        if (parentType.toLowerCase() !== contentType.toLowerCase()) {
+          setError(`Parent hash type is \"${parentType}\" but current content type is \"${contentType}\". Change content type to match before signing.`);
+          return;
+        }
+      } catch {
+        setError("Failed to validate parent hash type. Please try again.");
+        return;
+      } finally {
+        setIsValidatingParentHash(false);
+      }
     }
 
     if (!computedHash) {
@@ -766,7 +831,11 @@ export default function PublishPage() {
                 />
                 <datalist id="parentHashSuggestions">
                   {filteredParentHashSuggestions.map((hash) => (
-                    <option key={hash} value={hash} />
+                    <option
+                      key={hash}
+                      value={hash}
+                      label={parentHashTypeLookup[hash.toLowerCase()] || ""}
+                    />
                   ))}
                 </datalist>
                 <p className="mt-1 text-xs text-gray-400">
@@ -787,10 +856,10 @@ export default function PublishPage() {
               </button>
               <button
                 onClick={handleSignAndRegister}
-                disabled={!computedHash || isSigning || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
+                disabled={!computedHash || isSigning || isValidatingParentHash || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
                 className="flex-1 rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
               >
-                Sign & Register
+                {isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
               </button>
             </div>
           </div>
