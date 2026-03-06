@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [isFetching, setIsFetching] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isSelectingAll, setIsSelectingAll] = useState(false);
   const [selectedPublicationIds, setSelectedPublicationIds] = useState<string[]>([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [fetchError, setFetchError] = useState("");
@@ -170,9 +171,8 @@ export default function DashboardPage() {
     return () => window.clearInterval(interval);
   }, [isConnected, address, loadPublications]);
 
-  const filteredIds = publications.map((publication) => publication.id);
   const hasSelections = selectedPublicationIds.length > 0;
-  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedPublicationIds.includes(id));
+  const allFilteredSelected = totalPublications > 0 && selectedPublicationIds.length === totalPublications;
   const safeTotalPages = Math.max(totalPages, 1);
   const paginationStart = totalPublications === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const paginationEnd = Math.min(totalPublications, currentPage * pageSize);
@@ -273,13 +273,46 @@ export default function DashboardPage() {
     );
   };
 
-  const handleSelectAllFiltered = () => {
+  const handleSelectAllFiltered = async () => {
     if (allFilteredSelected) {
-      setSelectedPublicationIds((current) => current.filter((id) => !filteredIds.includes(id)));
+      setSelectedPublicationIds([]);
       return;
     }
 
-    setSelectedPublicationIds((current) => Array.from(new Set([...current, ...filteredIds])));
+    if (!address) {
+      setFetchError("Wallet connection required to select publications");
+      return;
+    }
+
+    try {
+      setIsSelectingAll(true);
+      const pageLimit = 100;
+      const collectedIds: string[] = [];
+      let page = 1;
+      let lastPage = 1;
+
+      do {
+        const data = await fetchPublications({
+          wallet: address,
+          search: appliedSearchTerm || undefined,
+          sortBy,
+          page,
+          limit: pageLimit,
+          sync: false,
+        });
+
+        collectedIds.push(...(data.publications || []).map((publication) => publication.id));
+        lastPage = Math.max(1, data.pagination?.totalPages ?? 1);
+        page += 1;
+      } while (page <= lastPage);
+
+      setSelectedPublicationIds(Array.from(new Set(collectedIds)));
+      setFetchError("");
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Failed to select all publications");
+    } finally {
+      setIsSelectingAll(false);
+    }
   };
 
   const toggleSelectMode = () => {
@@ -573,9 +606,10 @@ export default function DashboardPage() {
                     <>
                   <button
                     onClick={handleSelectAllFiltered}
-                    className="rounded border border-white bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-white hover:text-black"
+                    disabled={isSelectingAll || isBulkDeleting}
+                    className="rounded border border-white bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-white hover:text-black disabled:border-gray-800 disabled:text-gray-600"
                   >
-                    {allFilteredSelected ? "Unselect" : "All"}
+                    {isSelectingAll ? "Selecting..." : allFilteredSelected ? "Unselect" : "All"}
                   </button>
                   <button
                     onClick={handleDeleteSelected}
