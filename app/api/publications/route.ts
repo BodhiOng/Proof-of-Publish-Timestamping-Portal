@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addPublication, getPublications, getPublicationsByWallet, synchronizePendingPublications } from '@/lib/db';
+import { addPublication, getPublications, getPublicationsByHash, getPublicationsByWallet, synchronizePendingPublications } from '@/lib/db';
 import {
   canonicalizeContent,
   computeContentHash,
@@ -146,6 +146,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Provided content hash does not match canonicalized content' },
         { status: 400 }
+      );
+    }
+
+    const existingPublications = getPublicationsByHash(computedHash);
+    if (existingPublications.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Duplicate publication detected: this content hash already exists',
+          existingPublicationId: existingPublications[0].id,
+          existingTxHash: existingPublications[0].txHash,
+        },
+        { status: 409 }
       );
     }
 

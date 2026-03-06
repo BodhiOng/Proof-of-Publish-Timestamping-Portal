@@ -8,6 +8,7 @@ import {
   canonicalizePublicationContent,
   createPublication,
   getPublications,
+  verifyPublicationContent,
   scrapePublicationSource,
   type PublicationStatus,
 } from "@/lib/api-client";
@@ -172,6 +173,7 @@ export default function PublishPage() {
   const [publicationStatus, setPublicationStatus] = useState<PublicationStatus | null>(null);
   const [canonicalizedContent, setCanonicalizedContent] = useState("");
   const [computedHash, setComputedHash] = useState("");
+  const [duplicatePublicationId, setDuplicatePublicationId] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   
   const [txHash, setTxHash] = useState("");
@@ -380,6 +382,13 @@ export default function PublishPage() {
 
       setCanonicalizedContent(data.canonicalizedContent);
       setComputedHash(data.contentHash);
+      setDuplicatePublicationId(null);
+
+      const duplicateCheck = await verifyPublicationContent({ contentHash: data.contentHash });
+      if (duplicateCheck.matched && duplicateCheck.matches.length > 0) {
+        setDuplicatePublicationId(duplicateCheck.matches[0].publicationId);
+        setError(`Duplicate content detected: hash already exists in publication #${duplicateCheck.matches[0].publicationId}.`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to canonicalize content");
     }
@@ -390,6 +399,11 @@ export default function PublishPage() {
 
     if (!isCodeInputValid) {
       setError("For code type, upload a code file first");
+      return;
+    }
+
+    if (duplicatePublicationId) {
+      setError(`Duplicate content detected. Existing publication #${duplicatePublicationId} already uses this hash.`);
       return;
     }
 
@@ -476,6 +490,7 @@ export default function PublishPage() {
     setPublicationStatus(null);
     setCanonicalizedContent("");
     setComputedHash("");
+    setDuplicatePublicationId(null);
     setShowConfirmModal(false);
     setTxHash("");
     setBlockTimestamp("");
@@ -523,6 +538,7 @@ export default function PublishPage() {
     setUploadedFileName(file.name);
     setCanonicalizedContent("");
     setComputedHash("");
+    setDuplicatePublicationId(null);
     setIsUploadingFile(true);
     setUploadProgress(0);
 
@@ -614,6 +630,7 @@ export default function PublishPage() {
       }
       setCanonicalizedContent("");
       setComputedHash("");
+      setDuplicatePublicationId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to scrape content from URL");
     } finally {
@@ -770,6 +787,7 @@ export default function PublishPage() {
                     setFilePayload("");
                     setCanonicalizedContent("");
                     setComputedHash("");
+                    setDuplicatePublicationId(null);
                     setUploadProgress(0);
                     setUploadWarning("");
                     if (fileInputRef.current) {
@@ -853,6 +871,7 @@ export default function PublishPage() {
                   onChange={(e) => {
                     setContent(e.target.value);
                     setFilePayload("");
+                    setDuplicatePublicationId(null);
                   }}
                   readOnly={isContentReadOnly}
                   className="w-full rounded border border-gray-700 bg-black px-3 py-2 font-mono text-sm text-white focus:border-white focus:outline-none read-only:cursor-not-allowed read-only:opacity-80"
@@ -931,7 +950,7 @@ export default function PublishPage() {
               </button>
               <button
                 onClick={handleSignAndRegister}
-                disabled={!computedHash || isSigning || isValidatingParentHash || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
+                disabled={!computedHash || isSigning || isValidatingParentHash || Boolean(duplicatePublicationId) || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
                 className="flex-1 rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
               >
                 {isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
