@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type MouseEvent, useCallback, useEffect, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { deletePublication, getPublications as fetchPublications } from "@/lib/api-client";
 
@@ -38,6 +38,8 @@ export default function DashboardPage() {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalPublications, setTotalPublications] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const pageCacheRef = useRef<Record<number, Publication[]>>({});
+  const paginationCacheRef = useRef<{ total: number; totalPages: number } | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -64,8 +66,27 @@ export default function DashboardPage() {
     setPageInput(String(currentPage));
   }, [currentPage]);
 
+  useEffect(() => {
+    // Cache is only valid for the current wallet + search + page size context.
+    pageCacheRef.current = {};
+    paginationCacheRef.current = null;
+  }, [address, debouncedSearchTerm, pageSize]);
+
   const loadPublications = useCallback(async (withSync = false) => {
     if (!address) return;
+
+    if (!withSync) {
+      const cachedPage = pageCacheRef.current[currentPage];
+      if (cachedPage) {
+        setPublications(cachedPage);
+        if (paginationCacheRef.current) {
+          setTotalPublications(paginationCacheRef.current.total);
+          setTotalPages(paginationCacheRef.current.totalPages);
+        }
+        setFetchError("");
+        return;
+      }
+    }
 
     try {
       setIsFetching(true);
@@ -77,12 +98,40 @@ export default function DashboardPage() {
         sync: withSync,
       });
 
-      setPublications(data.publications || []);
-      setTotalPublications(data.pagination?.total ?? 0);
-      setTotalPages(data.pagination?.totalPages ?? 1);
+      const currentPublications = data.publications || [];
+      const nextTotal = data.pagination?.total ?? 0;
+      const nextTotalPages = data.pagination?.totalPages ?? 1;
+
+      pageCacheRef.current[currentPage] = currentPublications;
+      paginationCacheRef.current = {
+        total: nextTotal,
+        totalPages: nextTotalPages,
+      };
+
+      setPublications(currentPublications);
+      setTotalPublications(nextTotal);
+      setTotalPages(nextTotalPages);
 
       if (data.pagination && currentPage > data.pagination.totalPages && data.pagination.totalPages > 0) {
         setCurrentPage(data.pagination.totalPages);
+      }
+
+      // Prefetch the next page so paging stays snappy without loading all records at once.
+      const nextPage = currentPage + 1;
+      if (nextPage <= nextTotalPages && !pageCacheRef.current[nextPage]) {
+        void fetchPublications({
+          wallet: address,
+          search: debouncedSearchTerm || undefined,
+          page: nextPage,
+          limit: pageSize,
+          sync: false,
+        })
+          .then((prefetchData) => {
+            pageCacheRef.current[nextPage] = prefetchData.publications || [];
+          })
+          .catch(() => {
+            // Ignore prefetch failures; foreground fetches remain authoritative.
+          });
       }
 
       setFetchError("");
@@ -99,10 +148,19 @@ export default function DashboardPage() {
       setSelectedPublicationIds([]);
       setTotalPublications(0);
       setTotalPages(1);
+      pageCacheRef.current = {};
+      paginationCacheRef.current = null;
       return;
     }
 
-    loadPublications(true);
+    loadPublications(false);
+  }, [isConnected, address, loadPublications]);
+
+  useEffect(() => {
+    if (!isConnected || !address) {
+      return;
+    }
+
     const interval = window.setInterval(() => {
       loadPublications(true);
     }, 15000);
