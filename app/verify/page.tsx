@@ -323,7 +323,7 @@ export default function VerifyPage() {
                           <div className="space-y-2 text-xs">
                             <div>
                               <p className="text-gray-400">Publisher</p>
-                              <code className="text-white">{match.publisher}</code>
+                              <code className="block break-all text-white">{match.publisher}</code>
                             </div>
                             
                             <div>
@@ -333,13 +333,13 @@ export default function VerifyPage() {
                             
                             <div>
                               <p className="text-gray-400">Transaction Hash</p>
-                              <code className="truncate text-white">{match.txHash}</code>
+                              <code className="block break-all text-white">{match.txHash}</code>
                             </div>
 
                             {match.parentHash && (
                               <div>
                                 <p className="text-gray-400">Parent Hash (Version)</p>
-                                <code className="truncate text-white">{match.parentHash}</code>
+                                <code className="block break-all text-white">{match.parentHash}</code>
                               </div>
                             )}
                           </div>

@@ -16,6 +16,28 @@ export default function CanonicalizationDocsPage() {
         </div>
 
         <div className="space-y-8">
+          <section className="rounded-lg border border-gray-700 bg-black p-6">
+            <h2 className="mb-4 text-2xl font-bold">Current App Behavior</h2>
+            <ul className="space-y-2 text-sm text-gray-300">
+              <li>• Dashboard list is wallet-scoped: you only see publications for the connected address.</li>
+              <li>
+                • Pagination is server-backed with
+                <code className="ml-1 rounded bg-gray-900 px-1">page</code>,
+                <code className="ml-1 rounded bg-gray-900 px-1">limit</code>, and
+                <code className="ml-1 rounded bg-gray-900 px-1">search</code> query params.
+              </li>
+              <li>• Publish flow requires previewing canonicalized content before signing/registering.</li>
+              <li>
+                • File-based publish modes (
+                <code className="rounded bg-gray-900 px-1">code</code>,
+                <code className="ml-1 rounded bg-gray-900 px-1">document</code>,
+                <code className="ml-1 rounded bg-gray-900 px-1">image</code>,
+                <code className="ml-1 rounded bg-gray-900 px-1">audio</code>,
+                <code className="ml-1 rounded bg-gray-900 px-1">video</code>) generate descriptor headers and hash metadata.
+              </li>
+            </ul>
+          </section>
+
           {/* Introduction */}
           <section className="rounded-lg border border-white bg-black p-6">
             <h2 className="mb-4 text-2xl font-bold">Why Canonicalization?</h2>
@@ -35,9 +57,20 @@ export default function CanonicalizationDocsPage() {
             <h2 className="mb-4 text-2xl font-bold">Canonicalization Rules</h2>
             <div className="space-y-4">
               <div className="rounded border border-gray-700 bg-black p-4">
-                <h3 className="mb-2 font-bold text-white">1. Line Ending Normalization</h3>
+                <h3 className="mb-2 font-bold text-white">1. Boundary Trimming</h3>
                 <p className="mb-2 text-sm text-gray-300">
-                  Convert all line endings to Unix-style (LF / <code className="rounded bg-gray-900 px-1">\n</code>)
+                  Remove leading and trailing blank lines/spaces from the full input.
+                </p>
+                <div className="rounded bg-gray-900 p-3 font-mono text-xs">
+                  <p className="text-gray-400">// Before:</p>
+                  <p className="text-white">"\n\nHello\nWorld\n\n" → "Hello\nWorld"</p>
+                </div>
+              </div>
+
+              <div className="rounded border border-gray-700 bg-black p-4">
+                <h3 className="mb-2 font-bold text-white">2. Line Ending Normalization</h3>
+                <p className="mb-2 text-sm text-gray-300">
+                  Convert all line endings to Unix-style (LF / <code className="rounded bg-gray-900 px-1">\n</code>).
                 </p>
                 <div className="rounded bg-gray-900 p-3 font-mono text-xs">
                   <p className="text-gray-400">// Before:</p>
@@ -46,9 +79,9 @@ export default function CanonicalizationDocsPage() {
               </div>
 
               <div className="rounded border border-gray-700 bg-black p-4">
-                <h3 className="mb-2 font-bold text-white">2. Trailing Whitespace Removal</h3>
+                <h3 className="mb-2 font-bold text-white">3. Trailing Whitespace Removal</h3>
                 <p className="mb-2 text-sm text-gray-300">
-                  Remove all trailing whitespace from each line
+                  Remove all trailing whitespace from each line.
                 </p>
                 <div className="rounded bg-gray-900 p-3 font-mono text-xs">
                   <p className="text-gray-400">// Before:</p>
@@ -57,24 +90,13 @@ export default function CanonicalizationDocsPage() {
               </div>
 
               <div className="rounded border border-gray-700 bg-black p-4">
-                <h3 className="mb-2 font-bold text-white">3. Unicode Normalization (NFC)</h3>
+                <h3 className="mb-2 font-bold text-white">4. Unicode Normalization (NFC)</h3>
                 <p className="mb-2 text-sm text-gray-300">
                   Normalize all Unicode characters to NFC (Canonical Composition)
                 </p>
                 <div className="rounded bg-gray-900 p-3 font-mono text-xs">
                   <p className="text-gray-400">// Ensures é (U+00E9) and é (e + ◌́) produce the same hash</p>
                   <p className="text-white">content.normalize("NFC")</p>
-                </div>
-              </div>
-
-              <div className="rounded border border-gray-700 bg-black p-4">
-                <h3 className="mb-2 font-bold text-white">4. Leading/Trailing Blank Line Trimming</h3>
-                <p className="mb-2 text-sm text-gray-300">
-                  Remove empty lines at the beginning and end of content
-                </p>
-                <div className="rounded bg-gray-900 p-3 font-mono text-xs">
-                  <p className="text-gray-400">// Before:</p>
-                  <p className="text-white">"\n\nHello\nWorld\n\n" → "Hello\nWorld"</p>
                 </div>
               </div>
 
@@ -145,10 +167,10 @@ More content here...`}
               <pre className="overflow-x-auto font-mono text-xs text-gray-300">
 {`function canonicalize(content: string): string {
   return content
-    .replace(/\\r\\n/g, "\\n")      // 1. Normalize line endings
-    .replace(/\\s+$/gm, "")         // 2. Remove trailing whitespace
-    .normalize("NFC")              // 3. Unicode normalization
-    .trim();                       // 4. Trim leading/trailing lines
+    .trim()                        // 1. Trim leading/trailing lines
+    .replace(/\\r\\n/g, "\\n")     // 2. Normalize line endings
+    .replace(/\\s+$/gm, "")        // 3. Remove trailing whitespace
+    .normalize("NFC");             // 4. Unicode normalization
 }
 
 async function computeHash(content: string): Promise<string> {
@@ -162,6 +184,20 @@ async function computeHash(content: string): Promise<string> {
 }`}
               </pre>
             </div>
+          </section>
+
+          <section className="rounded-lg border border-gray-700 bg-black p-6">
+            <h2 className="mb-4 text-2xl font-bold">Pagination Test Data</h2>
+            <p className="mb-4 text-sm text-gray-300">
+              To stress-test dashboard pagination with realistic volume:
+            </p>
+            <div className="rounded border border-gray-700 bg-gray-900 p-4 font-mono text-xs text-gray-300">
+              <p>cmd /c npm run seed -- --target 100</p>
+              <p className="mt-2">cmd /c npm run seed -- --target 100 --wallet 0xYOUR_WALLET</p>
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              Use `--wallet` if you need all test entries visible for your connected account.
+            </p>
           </section>
 
           {/* Testing */}

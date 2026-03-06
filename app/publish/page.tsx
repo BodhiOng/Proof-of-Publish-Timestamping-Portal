@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { type ChangeEvent, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import {
   canonicalizePublicationContent,
   createPublication,
+  getPublications,
   scrapePublicationSource,
   type PublicationStatus,
 } from "@/lib/api-client";
@@ -138,6 +139,7 @@ export default function PublishPage() {
   const [contentType, setContentType] = useState<ContentType>("text");
   const [sourceUrl, setSourceUrl] = useState("");
   const [parentHash, setParentHash] = useState("");
+  const [availableParentHashes, setAvailableParentHashes] = useState<string[]>([]);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -189,6 +191,55 @@ export default function PublishPage() {
   const uploadSizeLimitText = MAX_EMBED_FILE_SIZE_BY_TYPE[contentType]
     ? `Max file size: ${formatFileSize(MAX_EMBED_FILE_SIZE_BY_TYPE[contentType] as number)}`
     : "";
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadParentHashSuggestions = async () => {
+      if (!address) {
+        setAvailableParentHashes([]);
+        return;
+      }
+
+      try {
+        const data = await getPublications({ wallet: address, limit: 100 });
+        if (!isMounted) {
+          return;
+        }
+
+        const uniqueHashes = Array.from(new Set(
+          (data.publications || [])
+            .map((publication) => publication.contentHash)
+            .filter((hash): hash is string => Boolean(hash))
+        ));
+
+        setAvailableParentHashes(uniqueHashes);
+      } catch {
+        if (isMounted) {
+          setAvailableParentHashes([]);
+        }
+      }
+    };
+
+    loadParentHashSuggestions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [address, publicationId]);
+
+  const filteredParentHashSuggestions = useMemo(() => {
+    const needle = parentHash.trim().toLowerCase();
+    const hashes = availableParentHashes.filter((hash) => hash !== computedHash);
+
+    if (!needle) {
+      return hashes.slice(0, 8);
+    }
+
+    return hashes
+      .filter((hash) => hash.toLowerCase().includes(needle))
+      .slice(0, 8);
+  }, [availableParentHashes, parentHash, computedHash]);
 
   const handlePreview = async () => {
     setError("");
@@ -536,7 +587,7 @@ export default function PublishPage() {
                   disabled={isSigning}
                   className="rounded border border-white bg-black px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
                 >
-                  Clear Content for New Publication
+                  Clear Content
                 </button>
               </div>
               
@@ -706,13 +757,20 @@ export default function PublishPage() {
                 <input
                   id="parentHash"
                   type="text"
+                  list="parentHashSuggestions"
+                  autoComplete="off"
                   value={parentHash}
                   onChange={(e) => setParentHash(e.target.value)}
                   className="w-full rounded border border-gray-700 bg-black px-3 py-2 font-mono text-sm text-white focus:border-white focus:outline-none"
                   placeholder="0x..."
                 />
+                <datalist id="parentHashSuggestions">
+                  {filteredParentHashSuggestions.map((hash) => (
+                    <option key={hash} value={hash} />
+                  ))}
+                </datalist>
                 <p className="mt-1 text-xs text-gray-400">
-                  Link this to a previous version by entering its hash
+                  Link this to a previous version by entering its hash. Suggestions appear while typing.
                 </p>
               </div>
 

@@ -11,10 +11,10 @@ export default function DevToolsPage() {
 
   const canonicalize = (content: string): string => {
     return content
+      .trim()
       .replace(/\r\n/g, "\n")
       .replace(/\s+$/gm, "")
-      .normalize("NFC")
-      .trim();
+      .normalize("NFC");
   };
 
   const computeHash = async (content: string): Promise<string> => {
@@ -70,16 +70,37 @@ More content here...
           </Link>
           <h1 className="mt-2 text-3xl font-bold">Developer Tools</h1>
           <p className="mt-1 text-sm text-gray-400">
-            Test canonicalization and hash computation in real-time
+            Validate canonicalization and hashing, and test current dashboard/pagination behavior
           </p>
         </div>
 
         {/* Warning Banner */}
         <div className="mb-8 rounded-lg border border-gray-700 bg-black p-4">
           <p className="text-xs text-gray-400">
-            <span className="font-bold text-white">Development Mode:</span> These tools are for testing and debugging. 
-            They use the same canonicalization and hashing logic as the production application.
+            <span className="font-bold text-white">Development Mode:</span> These tools are for testing and debugging.
+            Canonicalization rules and SHA-256 hashing are aligned with the production publish and verify flows.
           </p>
+        </div>
+
+        <div className="mb-8 rounded-lg border border-gray-700 bg-black p-6">
+          <h2 className="mb-3 text-lg font-bold">Current System Notes</h2>
+          <ul className="space-y-2 text-sm text-gray-300">
+            <li>
+              • Dashboard pagination is server-side (
+              <code className="rounded bg-gray-900 px-1">page</code>,
+              <code className="ml-1 rounded bg-gray-900 px-1">limit</code>,
+              <code className="ml-1 rounded bg-gray-900 px-1">search</code>) and scoped to the connected wallet.
+            </li>
+            <li>• Publish requires canonicalized preview before signing/registering a publication.</li>
+            <li>
+              • For large dashboard tests, seed data with
+              <code className="ml-1 rounded bg-gray-900 px-1">cmd /c npm run seed -- --target 100</code>.
+            </li>
+            <li>
+              • To test one wallet reaching a target count, use
+              <code className="ml-1 rounded bg-gray-900 px-1">--wallet 0x...</code> with the seed command.
+            </li>
+          </ul>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-2">
@@ -224,16 +245,16 @@ More content here...
         <div className="mt-8 rounded-lg border border-white bg-black p-6">
           <h2 className="mb-4 text-xl font-bold">Implementation Reference</h2>
           <p className="mb-4 text-sm text-gray-300">
-            This page uses the exact same canonicalization and hashing code as the production application:
+            Canonicalization rules and SHA-256 output match production behavior (frontend uses Web Crypto, backend uses Node crypto):
           </p>
           <div className="rounded border border-gray-700 bg-gray-900 p-4">
             <pre className="overflow-x-auto font-mono text-xs text-gray-300">
 {`function canonicalize(content: string): string {
   return content
+    .trim()                         // Trim leading/trailing blank lines
     .replace(/\\r\\n/g, "\\n")      // Normalize line endings
     .replace(/\\s+$/gm, "")         // Remove trailing whitespace
-    .normalize("NFC")              // Unicode normalization
-    .trim();                       // Trim leading/trailing lines
+    .normalize("NFC");             // Unicode normalization
 }
 
 async function computeHash(content: string): Promise<string> {
