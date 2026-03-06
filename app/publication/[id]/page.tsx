@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
-import { getPublicationById } from "@/lib/api-client";
+import { getAccountProfile, getPublicationById, type AccountProfile } from "@/lib/api-client";
 
 type Publication = {
   id: string;
@@ -81,6 +81,8 @@ export default function PublicationDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newChildVersionId, setNewChildVersionId] = useState<string | null>(null);
+  const [publisherProfile, setPublisherProfile] = useState<AccountProfile | null>(null);
+  const [isLoadingPublisherProfile, setIsLoadingPublisherProfile] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -148,6 +150,34 @@ export default function PublicationDetailPage({
       window.clearTimeout(timeoutId);
     };
   }, [newChildVersionId]);
+
+  useEffect(() => {
+    if (!publication?.publisherWallet) {
+      setPublisherProfile(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingPublisherProfile(true);
+
+    getAccountProfile(publication.publisherWallet)
+      .then((data) => {
+        if (!isMounted) return;
+        setPublisherProfile(data.account);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setPublisherProfile(null);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setIsLoadingPublisherProfile(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [publication?.publisherWallet]);
 
   if (loading) {
     return (
@@ -528,6 +558,74 @@ export default function PublicationDetailPage({
 
           {/* Sidebar */}
           <div className="space-y-6">
+            <div className="rounded-lg border border-gray-700 bg-black p-6">
+              <h2 className="mb-4 text-lg font-bold">Publisher Profile</h2>
+
+              {isLoadingPublisherProfile ? (
+                <p className="text-xs text-gray-400">Loading publisher profile...</p>
+              ) : publisherProfile ? (
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 overflow-hidden rounded-full border border-gray-700 bg-black">
+                      {publisherProfile.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={publisherProfile.avatarUrl}
+                          alt={`${publisherProfile.displayName || publisherProfile.username} avatar`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs font-bold text-gray-500">
+                          {publisherProfile.username.slice(0, 2).toUpperCase() || "NA"}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold text-white">{publisherProfile.displayName || publisherProfile.username}</p>
+                      <p className="text-xs text-gray-400">@{publisherProfile.username}</p>
+                    </div>
+                  </div>
+
+                  {publisherProfile.bio && (
+                    <p className="truncate text-xs text-gray-300" title={publisherProfile.bio}>
+                      {publisherProfile.bio}
+                    </p>
+                  )}
+
+                  {(publisherProfile.website || publisherProfile.location) && (
+                    <div className="flex flex-wrap gap-2">
+                      {publisherProfile.website && (
+                        <a
+                          href={publisherProfile.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-full border border-gray-700 px-3 py-1 text-xs text-white hover:border-white"
+                        >
+                          🌐 Website
+                        </a>
+                      )}
+
+                      {publisherProfile.location && (
+                        <span className="rounded-full border border-gray-700 px-3 py-1 text-xs text-gray-300">
+                          📍 {publisherProfile.location}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-bold text-gray-400">Wallet</p>
+                    <code className="block break-all text-xs text-white">{publication.publisherWallet}</code>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 text-xs text-gray-400">
+                  <p>No account profile found for this publisher wallet.</p>
+                  <code className="block break-all text-white">{publication.publisherWallet}</code>
+                </div>
+              )}
+            </div>
+
             {/* Actions */}
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-lg font-bold">Actions</h2>

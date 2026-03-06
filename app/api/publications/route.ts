@@ -166,6 +166,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid parent hash format' }, { status: 400 });
     }
 
+    const normalizedPublisherWallet = publisherWallet.trim().toLowerCase();
+
+    if (normalizedParentHash) {
+      const parentPublication = getPublicationsByHash(normalizedParentHash).find(
+        (publication) => publication.contentHash.toLowerCase() === normalizedParentHash
+      );
+
+      if (!parentPublication) {
+        return NextResponse.json({ error: 'Parent publication not found' }, { status: 404 });
+      }
+
+      if (parentPublication.publisherWallet.toLowerCase() !== normalizedPublisherWallet) {
+        return NextResponse.json(
+          { error: 'Only the original publisher can create a child version from this parent hash' },
+          { status: 403 }
+        );
+      }
+    }
+
     const normalizedStatus = status === 'CONFIRMED' || status === 'FAILED' || status === 'PENDING'
       ? status
       : 'PENDING';
@@ -177,7 +196,7 @@ export async function POST(request: NextRequest) {
       contentType,
       canonicalizedContent: normalizedCanonicalized,
       sourceUrl: typeof sourceUrl === 'string' && sourceUrl.trim() ? sourceUrl.trim() : undefined,
-      publisherWallet,
+      publisherWallet: normalizedPublisherWallet,
       contentHash: computedHash,
       parentHash: normalizedParentHash,
       txHash: typeof txHash === 'string' && txHash.trim() ? txHash.trim() : generateMockTxHash(),

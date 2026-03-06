@@ -58,10 +58,6 @@ export type VerifyResponse = {
 };
 
 export type WalletStatusResponse = {
-  backendSigning: {
-    enabled: boolean;
-    address: string | null;
-  };
   clientSigning: {
     metamask: boolean;
     walletConnect: boolean;
@@ -70,6 +66,24 @@ export type WalletStatusResponse = {
     preferred: string;
     warning: string;
   };
+};
+
+export type AccountProfile = {
+  wallet: string;
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarUrl: string;
+  website: string;
+  location: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccountChallengeResponse = {
+  nonce: string;
+  message: string;
+  expiresAt: number;
 };
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
@@ -202,5 +216,51 @@ export async function scrapePublicationSource(sourceUrl: string): Promise<{
   return requestJson('/api/publications/scrape', {
     method: 'POST',
     body: { sourceUrl },
+  });
+}
+
+export async function issueAccountChallenge(wallet: string): Promise<AccountChallengeResponse> {
+  return requestJson('/api/accounts/challenge', {
+    method: 'POST',
+    body: { wallet },
+  });
+}
+
+export async function getAccountProfile(wallet: string): Promise<{ account: AccountProfile | null }> {
+  const params = new URLSearchParams({ wallet });
+  return requestJson(`/api/accounts/profile?${params.toString()}`);
+}
+
+export async function createAccountProfile(payload: {
+  wallet: string;
+  signature: string;
+  challengeMessage: string;
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarUrl: string;
+  website: string;
+  location: string;
+}): Promise<{ account: AccountProfile; created: boolean }> {
+  return requestJson('/api/accounts/profile', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function updateAccountProfile(payload: {
+  wallet: string;
+  signature: string;
+  challengeMessage: string;
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarUrl: string;
+  website: string;
+  location: string;
+}): Promise<{ account: AccountProfile; updated: boolean }> {
+  return requestJson('/api/accounts/profile', {
+    method: 'PATCH',
+    body: payload,
   });
 }

@@ -7,6 +7,7 @@ import { deletePublication, getPublications as fetchPublications } from "@/lib/a
 
 const DEFAULT_PAGE_SIZE = 10;
 type DashboardSort = "newest" | "oldest" | "title_asc" | "title_desc" | "type_asc";
+type DashboardViewMode = "all" | "mine";
 
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
@@ -15,6 +16,7 @@ type Publication = {
   contentType: string;
   contentHash: string;
   canonicalizedContent: string;
+  publisherWallet: string;
   status: PublicationStatus;
   txHash?: string;
   blockTimestamp?: string;
@@ -35,6 +37,7 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<DashboardSort>("newest");
+  const [viewMode, setViewMode] = useState<DashboardViewMode>("all");
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInput, setPageInput] = useState("1");
@@ -62,10 +65,18 @@ export default function DashboardPage() {
   }, [currentPage]);
 
   useEffect(() => {
-    // Cache is only valid for the current wallet + search + sort + page size context.
+    // Cache is only valid for the current view + wallet + search + sort + page size context.
     pageCacheRef.current = {};
     paginationCacheRef.current = null;
-  }, [address, appliedSearchTerm, sortBy, pageSize]);
+  }, [viewMode, address, appliedSearchTerm, sortBy, pageSize]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      setViewMode("all");
+      setIsSelectMode(false);
+      setSelectedPublicationIds([]);
+    }
+  }, [isConnected]);
 
   const applySearch = () => {
     setCurrentPage(1);
@@ -73,7 +84,12 @@ export default function DashboardPage() {
   };
 
   const loadPublications = useCallback(async (withSync = false) => {
-    if (!address) return;
+    if (viewMode === "mine" && !address) {
+      setPublications([]);
+      setTotalPublications(0);
+      setTotalPages(1);
+      return;
+    }
 
     if (!withSync) {
       const cachedPage = pageCacheRef.current[currentPage];
@@ -91,7 +107,7 @@ export default function DashboardPage() {
     try {
       setIsFetching(true);
       const data = await fetchPublications({
-        wallet: address,
+        wallet: viewMode === "mine" ? address || undefined : undefined,
         search: appliedSearchTerm || undefined,
         sortBy,
         page: currentPage,
@@ -121,7 +137,7 @@ export default function DashboardPage() {
       const nextPage = currentPage + 1;
       if (nextPage <= nextTotalPages && !pageCacheRef.current[nextPage]) {
         void fetchPublications({
-          wallet: address,
+          wallet: viewMode === "mine" ? address || undefined : undefined,
           search: appliedSearchTerm || undefined,
           sortBy,
           page: nextPage,
@@ -142,25 +158,14 @@ export default function DashboardPage() {
     } finally {
       setIsFetching(false);
     }
-  }, [address, currentPage, pageSize, appliedSearchTerm, sortBy]);
+  }, [viewMode, address, currentPage, pageSize, appliedSearchTerm, sortBy]);
 
   useEffect(() => {
-    if (!isConnected || !address) {
-      setPublications([]);
-      setSelectedPublicationIds([]);
-      setTotalPublications(0);
-      setTotalPages(1);
-      setAppliedSearchTerm("");
-      pageCacheRef.current = {};
-      paginationCacheRef.current = null;
-      return;
-    }
-
     loadPublications(false);
-  }, [isConnected, address, loadPublications]);
+  }, [loadPublications]);
 
   useEffect(() => {
-    if (!isConnected || !address) {
+    if (viewMode === "mine" && (!isConnected || !address)) {
       return;
     }
 
@@ -169,7 +174,11 @@ export default function DashboardPage() {
     }, 15000);
 
     return () => window.clearInterval(interval);
-  }, [isConnected, address, loadPublications]);
+  }, [viewMode, isConnected, address, loadPublications]);
+
+  const canManageOwn = isConnected && !!address && viewMode === "mine";
+  const isOwnPublication = (publication: Publication) =>
+    !!address && publication.publisherWallet.toLowerCase() === address.toLowerCase();
 
   const hasSelections = selectedPublicationIds.length > 0;
   const allFilteredSelected = totalPublications > 0 && selectedPublicationIds.length === totalPublications;
@@ -279,7 +288,7 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!address) {
+    if (!canManageOwn || !address) {
       setFetchError("Wallet connection required to select publications");
       return;
     }
@@ -410,59 +419,6 @@ export default function DashboardPage() {
     );
   }
 
-  // Not connected state
-  if (!isConnected) {
-    return (
-      <main className="min-h-screen bg-black text-white">
-        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
-          <div className="mb-8 border-b border-white pb-6">
-            <Link href="/" className="text-sm text-gray-400 hover:text-white">
-              ← Back to Home
-            </Link>
-            <h1 className="mt-2 text-3xl font-bold">Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-400">
-              Manage your publications and view version chains
-            </p>
-          </div>
-          
-          <div className="mx-auto max-w-2xl">
-            <div className="rounded-lg border border-white bg-black p-12 text-center">
-              <div className="mb-6">
-                <div className="mx-auto mb-4 h-16 w-16 rounded-full border-2 border-white bg-black p-4">
-                  <svg className="h-full w-full text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <h2 className="mb-3 text-2xl font-bold">Wallet Connection Required</h2>
-                <p className="mb-6 text-gray-400">
-                  You need to connect your MetaMask wallet to view your publications dashboard. 
-                  Your publications are associated with your wallet address.
-                </p>
-              </div>
-              
-              <Link
-                href="/connect-wallet"
-                className="inline-block rounded-full bg-white px-8 py-3 font-bold text-black hover:bg-gray-200"
-              >
-                Connect MetaMask Wallet
-              </Link>
-
-              <div className="mt-6 rounded-lg border border-gray-700 bg-black p-4 text-left">
-                <h3 className="mb-2 text-sm font-bold">What you'll see after connecting:</h3>
-                <ul className="space-y-1 text-xs text-gray-400">
-                  <li>• All your published content proofs</li>
-                  <li>• Version chains and content lineage</li>
-                  <li>• Search and filter your publications</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-        {renderReturnToTopButton()}
-      </main>
-    );
-  }
-
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
@@ -494,11 +450,11 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <div>
                   <p className="mb-1 text-xs text-gray-400">Connected Account</p>
-                  <code className="block truncate text-xs text-white">{address}</code>
+                  <code className="block truncate text-xs text-white">{address || "Not connected"}</code>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-white"></div>
-                  <span className="text-xs font-bold">{isFetching ? "Syncing..." : "Connected"}</span>
+                  <div className={`h-2 w-2 rounded-full ${isConnected ? "bg-white" : "bg-gray-600"}`}></div>
+                  <span className="text-xs font-bold">{isConnected ? (isFetching ? "Syncing..." : "Connected") : "Disconnected"}</span>
                 </div>
                 <div className="grid gap-2">
                   <Link
@@ -507,12 +463,14 @@ export default function DashboardPage() {
                   >
                     Manage Wallet
                   </Link>
-                  <button
-                    onClick={disconnect}
-                    className="w-full rounded border border-gray-700 bg-black px-4 py-2 text-xs font-bold text-white hover:border-white"
-                  >
-                    Disconnect
-                  </button>
+                  {isConnected && (
+                    <button
+                      onClick={disconnect}
+                      className="w-full rounded border border-gray-700 bg-black px-4 py-2 text-xs font-bold text-white hover:border-white"
+                    >
+                      Disconnect
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -522,7 +480,7 @@ export default function DashboardPage() {
               <h2 className="mb-4 text-lg font-bold">Statistics</h2>
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Total Publications</span>
+                  <span className="text-gray-400">Total {viewMode === "mine" ? "My" : "Network"} Publications</span>
                   <span className="font-bold text-white">{totalPublications}</span>
                 </div>
               </div>
@@ -595,9 +553,48 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-400">View</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode("all");
+                      setCurrentPage(1);
+                      setIsSelectMode(false);
+                      setSelectedPublicationIds([]);
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                      viewMode === "all"
+                        ? "border-white bg-white text-black"
+                        : "border-gray-700 text-white hover:border-white"
+                    }`}
+                  >
+                    All Network
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isConnected) {
+                        setFetchError("Connect wallet to view your own posts.");
+                        return;
+                      }
+                      setViewMode("mine");
+                      setCurrentPage(1);
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                      viewMode === "mine"
+                        ? "border-white bg-white text-black"
+                        : "border-gray-700 text-white hover:border-white"
+                    }`}
+                  >
+                    My Posts
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={toggleSelectMode}
-                    className="rounded border border-white bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-white hover:text-black"
+                    disabled={!canManageOwn}
+                    className="rounded border border-white bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-white hover:text-black disabled:border-gray-800 disabled:text-gray-600 disabled:hover:bg-black"
                   >
                     {isSelectMode ? "Done" : "Select"}
                   </button>
@@ -701,6 +698,13 @@ export default function DashboardPage() {
                             <code className="truncate text-white">{pub.parentHash}</code>
                           </div>
                         )}
+
+                        {viewMode === "all" && (
+                          <div>
+                            <p className="text-gray-400">Publisher</p>
+                            <code className="truncate text-white">{pub.publisherWallet}</code>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -711,28 +715,32 @@ export default function DashboardPage() {
                           View Details
                         </Link>
 
-                        <details className="relative">
-                          <summary className="cursor-pointer list-none rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white">
-                            More
-                          </summary>
-                          <div className="absolute right-0 z-10 mt-2 min-w-[180px] space-y-1 rounded border border-gray-700 bg-black p-2">
-                            {pub.status === "CONFIRMED" && (
-                              <Link
-                                href={`/publish?parent=${pub.contentHash}`}
-                                className="block rounded px-2 py-1 text-xs text-white hover:bg-white hover:text-black"
-                              >
-                                Create New Version
-                              </Link>
-                            )}
-                            <button
-                              onClick={() => handleDeletePublication(pub.id)}
-                              disabled={deletingId === pub.id || isBulkDeleting}
-                              className="block w-full rounded px-2 py-1 text-left text-xs text-white hover:bg-white hover:text-black disabled:text-gray-600"
-                            >
-                              {deletingId === pub.id ? "Deleting..." : "Delete"}
-                            </button>
-                          </div>
-                        </details>
+                        {isOwnPublication(pub) ? (
+                          <details className="relative">
+                            <summary className="cursor-pointer list-none rounded border border-gray-700 bg-black px-3 py-1 text-xs font-bold text-white hover:border-white">
+                              More
+                            </summary>
+                            <div className="absolute right-0 z-10 mt-2 min-w-[180px] space-y-1 rounded border border-gray-700 bg-black p-2">
+                              {pub.status === "CONFIRMED" && isOwnPublication(pub) && (
+                                <Link
+                                  href={`/publish?parent=${pub.contentHash}`}
+                                  className="block rounded px-2 py-1 text-xs text-white hover:bg-white hover:text-black"
+                                >
+                                  Create New Version
+                                </Link>
+                              )}
+                              {isOwnPublication(pub) && (
+                                <button
+                                  onClick={() => handleDeletePublication(pub.id)}
+                                  disabled={deletingId === pub.id || isBulkDeleting}
+                                  className="block w-full rounded px-2 py-1 text-left text-xs text-white hover:bg-white hover:text-black disabled:text-gray-600"
+                                >
+                                  {deletingId === pub.id ? "Deleting..." : "Delete"}
+                                </button>
+                              )}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
                     </div>
                   </div>

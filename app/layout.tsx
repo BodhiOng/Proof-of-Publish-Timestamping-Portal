@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import ScrollToTopOnRouteChange from "./ScrollToTopOnRouteChange";
+import TopNav from "./TopNav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,22 +36,7 @@ export default function RootLayout({
             <Link href="/" className="text-sm font-bold text-white hover:underline">
               Proof of Publish
             </Link>
-            <nav className="flex flex-wrap items-center gap-4 text-xs font-semibold text-gray-300 sm:gap-6">
-              <Link href="/publish" className="hover:text-white hover:underline">Publish</Link>
-              <Link href="/verify" className="hover:text-white hover:underline">Verify</Link>
-              <Link href="/dashboard" className="hover:text-white hover:underline">Dashboard</Link>
-              <Link href="/dev-tools" className="hover:text-white hover:underline">Dev Tools</Link>
-              <Link href="/docs/canonicalization" className="hover:text-white hover:underline">Docs</Link>
-              <a
-                href="https://github.com/BodhiOng/Proof-of-Publish-Timestamping-Portal"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-white hover:underline"
-              >
-                GitHub
-              </a>
-              <Link href="/connect-wallet" className="rounded-full border border-white px-3 py-1 text-white hover:bg-white hover:text-black">Connect Wallet</Link>
-            </nav>
+            <TopNav />
           </div>
         </header>
         <ScrollToTopOnRouteChange />
