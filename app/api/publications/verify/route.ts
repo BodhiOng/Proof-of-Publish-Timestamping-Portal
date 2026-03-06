@@ -1,29 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPublicationsByHash } from '@/lib/db';
 import { canonicalizeContent, computeContentHash, normalizeHashInput } from '@/lib/publication-utils';
-
-async function fetchTextContent(sourceUrl: string): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const response = await fetch(sourceUrl, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        Accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.8',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch URL: ${response.status}`);
-    }
-
-    return await response.text();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+import { scrapeSourceContent } from '@/lib/source-content';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!finalHash && fetchFromUrl === true && typeof sourceUrl === 'string' && sourceUrl.trim()) {
-      const urlContent = await fetchTextContent(sourceUrl.trim());
+      const { content: urlContent } = await scrapeSourceContent(sourceUrl.trim());
       finalHash = computeContentHash(canonicalizeContent(urlContent));
     }
 
