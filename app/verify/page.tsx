@@ -152,7 +152,7 @@ export default function VerifyPage() {
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <div className="mx-auto max-w-5xl px-6 py-12 lg:px-12">
+      <div className="mx-auto max-w-6xl px-6 py-12 lg:px-12">
         {/* Header */}
         <div className="mb-8 border-b border-white pb-6">
           <Link href="/" className="text-sm text-gray-400 hover:text-white">
@@ -172,17 +172,17 @@ export default function VerifyPage() {
           </p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           {/* Left: Input */}
           <div className="space-y-6">
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-xl font-bold">Input Method</h2>
               
               {/* Method Selector */}
-              <div className="mb-6 flex gap-2">
+              <div className="mb-6 flex flex-wrap gap-2">
                 <button
                   onClick={() => setInputMethod("text")}
-                  className={`flex-1 rounded px-4 py-2 text-sm font-bold ${
+                  className={`min-w-[120px] flex-1 rounded px-4 py-2 text-sm font-bold ${
                     inputMethod === "text"
                       ? "bg-white text-black"
                       : "border border-gray-700 bg-black text-white hover:border-white"
@@ -192,7 +192,7 @@ export default function VerifyPage() {
                 </button>
                 <button
                   onClick={() => setInputMethod("file")}
-                  className={`flex-1 rounded px-4 py-2 text-sm font-bold ${
+                  className={`min-w-[120px] flex-1 rounded px-4 py-2 text-sm font-bold ${
                     inputMethod === "file"
                       ? "bg-white text-black"
                       : "border border-gray-700 bg-black text-white hover:border-white"
@@ -202,7 +202,7 @@ export default function VerifyPage() {
                 </button>
                 <button
                   onClick={() => setInputMethod("url")}
-                  className={`flex-1 rounded px-4 py-2 text-sm font-bold ${
+                  className={`min-w-[120px] flex-1 rounded px-4 py-2 text-sm font-bold ${
                     inputMethod === "url"
                       ? "bg-white text-black"
                       : "border border-gray-700 bg-black text-white hover:border-white"
@@ -312,13 +312,29 @@ export default function VerifyPage() {
           </div>
 
           {/* Right: Results */}
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
             <div className="rounded-lg border border-white bg-black p-6">
               <h2 className="mb-4 text-xl font-bold">Verification Result</h2>
 
               {!result && !error && (
-                <div className="rounded border border-gray-700 bg-black p-8 text-center text-gray-400">
-                  <p>Click "Compute & Check" to verify content</p>
+                <div className="space-y-4 rounded border border-gray-700 bg-black p-5">
+                  <div className="rounded border border-gray-700 bg-black p-4">
+                    <p className="text-sm font-bold text-white">Ready to verify</p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Choose an input method, load your content, then run verification.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 text-xs text-gray-300">
+                    <p className="font-bold text-white">Quick flow</p>
+                    <p>1. Paste text, upload a file, or enter a URL.</p>
+                    <p>2. Click "Compute & Check" or "Fetch & Verify" for URL mode.</p>
+                    <p>3. Review hash parity and any on-chain matches below.</p>
+                  </div>
+
+                  <div className="rounded border border-gray-700 bg-black p-3 text-xs text-gray-400">
+                    Tip: uploaded files are converted to the same descriptor format used by publishing, so verification stays hash-consistent.
+                  </div>
                 </div>
               )}
 
@@ -334,7 +350,7 @@ export default function VerifyPage() {
                   <div>
                     <label className="mb-2 block text-sm font-bold">Computed Hash</label>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 truncate rounded border border-gray-700 bg-black px-3 py-2 font-mono text-xs text-white">
+                      <code className="flex-1 break-all rounded border border-gray-700 bg-black px-3 py-2 font-mono text-xs text-white">
                         {result.hash}
                       </code>
                       <button
