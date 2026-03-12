@@ -330,6 +330,8 @@ export default function PublicationDetailPage({
   const parsedFile = parseFileDescriptor(publication.canonicalizedContent);
   const hasFileDescriptor = Boolean(parsedFile.fileName && parsedFile.mimeType);
   const isDocumentPublication = publication.contentType === "document";
+  const isCodePublication = publication.contentType === "code";
+  const useDownloadOnlyFileSection = isDocumentPublication || isCodePublication;
   const isAudioOrVideoPublication = publication.contentType === "audio" || publication.contentType === "video";
   const audioOrVideoType = publication.contentType === "audio" || publication.contentType === "video"
     ? publication.contentType
@@ -375,7 +377,18 @@ export default function PublicationDetailPage({
             <p className="text-sm text-gray-400">Publication #{publication.id}</p>
           </div>
 
-          {hasFileDescriptor && (
+          {hasFileDescriptor && useDownloadOnlyFileSection && parsedFile.dataUrl && (
+            <section className="rounded-3xl border border-white p-5">
+              <h2 className="text-lg font-bold">File Download</h2>
+              <div className="mt-4 grid gap-2">
+                <a href={parsedFile.dataUrl} download={parsedFile.fileName} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                  {isDocumentPublication ? "Download Document" : "Download Code File"}
+                </a>
+              </div>
+            </section>
+          )}
+
+          {hasFileDescriptor && !useDownloadOnlyFileSection && (
             <section className="rounded-3xl border border-white p-5">
               <h2 className="text-lg font-bold">{isDocumentPublication ? "Uploaded File" : "Uploaded File Preview"}</h2>
               <div className="mt-4 rounded-2xl border border-gray-700 p-4 text-sm">
@@ -624,7 +637,22 @@ export default function PublicationDetailPage({
           {/* Main Content */}
           <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
             {/* Uploaded File Preview */}
-            {hasFileDescriptor && (
+            {hasFileDescriptor && useDownloadOnlyFileSection && parsedFile.dataUrl && (
+              <div className="rounded-lg border border-white bg-black p-6">
+                <h2 className="mb-4 text-xl font-bold">File Download</h2>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <a
+                    href={parsedFile.dataUrl}
+                    download={parsedFile.fileName}
+                    className="inline-block rounded border border-white bg-black px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    {isDocumentPublication ? "Download Document" : "Download Code File"}
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {hasFileDescriptor && !useDownloadOnlyFileSection && (
               <div className="rounded-lg border border-white bg-black p-6">
                 <h2 className="mb-4 text-xl font-bold">{isDocumentPublication ? "Uploaded File" : "Uploaded File Preview"}</h2>
 

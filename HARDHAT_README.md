@@ -44,10 +44,10 @@ npm run hardhat:deploy -- --network <network-name>
 
 ### Example Contract
 
-The project includes a sample `Lock.sol` contract that demonstrates:
-- Time-locked fund withdrawal
-- Basic access control
-- Event emission
+The project includes a `PublicationRegistry.sol` contract that demonstrates:
+- Publication hash registration on-chain
+- Parent-child version linking with publisher ownership checks
+- Event emission for indexing and verification workflows
 - Solidity 0.8.28 features
 
 ### Configuration
@@ -102,7 +102,7 @@ npx hardhat run scripts/deploy.ts --network sepolia
 Hardhat Ignition provides a declarative deployment system:
 
 ```bash
-npx hardhat ignition deploy ./ignition/modules/Lock.ts
+npx hardhat ignition deploy ./ignition/modules/PublicationRegistry.ts
 ```
 
 ## Next.js Application
