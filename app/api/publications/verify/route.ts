@@ -15,8 +15,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (!finalHash && fetchFromUrl === true && typeof sourceUrl === 'string' && sourceUrl.trim()) {
-      const { content: urlContent } = await scrapeSourceContent(sourceUrl.trim());
-      finalHash = computeContentHash(canonicalizeContent(urlContent));
+      try {
+        const { content: urlContent } = await scrapeSourceContent(sourceUrl.trim());
+        finalHash = computeContentHash(canonicalizeContent(urlContent));
+      } catch (scrapeError) {
+        const message = scrapeError instanceof Error ? scrapeError.message : 'Failed to fetch URL';
+
+        if (message === 'Invalid URL format' || message === 'Only HTTP/HTTPS URLs are supported') {
+          return NextResponse.json({ error: message }, { status: 400 });
+        }
+        if (message === 'No readable content found at URL') {
+          return NextResponse.json({ error: 'No readable content found at that URL' }, { status: 422 });
+        }
+        if (message.startsWith('Failed to fetch URL:')) {
+          return NextResponse.json({ error: `Could not reach the URL (${message.replace('Failed to fetch URL: ', 'HTTP ')})` }, { status: 422 });
+        }
+        return NextResponse.json({ error: 'Failed to fetch content from URL' }, { status: 502 });
+      }
     }
 
     if (!finalHash) {

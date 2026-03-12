@@ -142,9 +142,9 @@ export default function VerifyPage() {
 
     try {
       const data = await verifyPublicationContent({ content: textContent });
-
       setResult(data);
     } catch (err) {
+      setResult(null);
       setError(err instanceof Error ? err.message : "Failed to verify content");
     } finally {
       setIsProcessing(false);
@@ -156,15 +156,16 @@ export default function VerifyPage() {
 
     setIsFetchingUrl(true);
     setError("");
+    setResult(null);
 
     try {
       const data = await verifyPublicationContent({
         sourceUrl: url,
         fetchFromUrl: true,
       });
-
       setResult(data);
     } catch (err) {
+      setResult(null);
       setError(err instanceof Error ? err.message : "Failed to fetch and verify URL content");
     } finally {
       setIsFetchingUrl(false);
