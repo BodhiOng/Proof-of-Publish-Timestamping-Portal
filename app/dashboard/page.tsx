@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { deletePublication, getPublications as fetchPublications } from "@/lib/api-client";
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -25,6 +26,7 @@ type Publication = {
 
 export default function DashboardPage() {
   const { isConnected, address, isLoading, disconnect } = useWallet();
+  const isMobile = useIsMobile();
   
   const [publications, setPublications] = useState<Publication[]>([]);
   const [isFetching, setIsFetching] = useState(false);
@@ -186,8 +188,24 @@ export default function DashboardPage() {
   const paginationStart = totalPublications === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const paginationEnd = Math.min(totalPublications, currentPage * pageSize);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for environments where clipboard API is unavailable
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    } catch (err) {
+      console.warn("Failed to copy to clipboard:", err);
+    }
   };
 
   const getSnippet = (publication: Publication) => {
@@ -401,6 +419,22 @@ export default function DashboardPage() {
 
   // Loading state
   if (isLoading) {
+    if (isMobile) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+            <div className="space-y-3 border-b border-white pb-5">
+              <Link href="/" className="text-sm text-gray-400 hover:text-white">
+                ← Back to Home
+              </Link>
+              <h1 className="text-3xl font-bold">Dashboard</h1>
+            </div>
+            <div className="rounded-3xl border border-white p-8 text-center text-gray-400">Loading...</div>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-screen bg-black text-white">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
@@ -412,6 +446,310 @@ export default function DashboardPage() {
           </div>
           <div className="rounded-lg border border-white bg-black p-12 text-center">
             <p className="text-gray-400">Loading...</p>
+          </div>
+        </div>
+        {renderReturnToTopButton()}
+      </main>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+          <div className="space-y-3 border-b border-white pb-5">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <div className="space-y-3">
+              <h1 className="text-3xl font-bold">Dashboard</h1>
+              <p className="text-sm text-gray-400">Manage publications and version chains from a stacked mobile view.</p>
+            </div>
+            <Link href="/publish" className="inline-flex rounded-full bg-white px-5 py-3 text-sm font-bold text-black hover:bg-gray-200">
+              + New Publication
+            </Link>
+          </div>
+
+          <div className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Wallet Status</h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <p className="text-xs text-gray-400">Connected Account</p>
+                <code className="mt-1 block break-all text-xs text-white">{address || "Not connected"}</code>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className={`h-2 w-2 rounded-full ${isConnected ? "bg-white" : "bg-gray-600"}`}></span>
+                <span>{isConnected ? (isFetching ? "Syncing..." : "Connected") : "Disconnected"}</span>
+              </div>
+              <div className="grid gap-2">
+                <Link href="/connect-wallet" className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                  Manage Wallet
+                </Link>
+                {isConnected && (
+                  <button onClick={disconnect} className="rounded border border-gray-700 px-4 py-3 text-sm font-bold text-white hover:border-white">
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-gray-700 p-5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-400">Total {viewMode === "mine" ? "My" : "Network"} Publications</span>
+              <span className="font-bold text-white">{totalPublications}</span>
+            </div>
+          </div>
+
+          {fetchError && (
+            <div className="rounded-3xl border border-white p-4 text-sm font-bold text-white">
+              ⚠ {fetchError}
+            </div>
+          )}
+
+          <div className="rounded-3xl border border-white p-5">
+            <label htmlFor="search-mobile" className="mb-2 block text-sm font-bold">Search</label>
+            <input
+              id="search-mobile"
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  applySearch();
+                }
+              }}
+              className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+              placeholder="Search by title or hash..."
+            />
+            <button
+              type="button"
+              onClick={applySearch}
+              disabled={isFetching}
+              className="mt-3 w-full rounded border border-white px-4 py-3 text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+            >
+              Search
+            </button>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label htmlFor="sortBy-mobile" className="mb-1 block text-xs text-gray-400">Sort</label>
+                <select
+                  id="sortBy-mobile"
+                  value={sortBy}
+                  onChange={(e) => {
+                    setSortBy(e.target.value as DashboardSort);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="title_asc">Title A-Z</option>
+                  <option value="title_desc">Title Z-A</option>
+                  <option value="type_asc">Type A-Z</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode("all");
+                    setCurrentPage(1);
+                    setIsSelectMode(false);
+                    setSelectedPublicationIds([]);
+                  }}
+                  className={viewMode === "all" ? "rounded-full border border-white bg-white px-3 py-2 text-black" : "rounded-full border border-gray-700 px-3 py-2 text-white"}
+                >
+                  All Network
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isConnected) {
+                      setFetchError("Connect wallet to view your own posts.");
+                      return;
+                    }
+                    setViewMode("mine");
+                    setCurrentPage(1);
+                  }}
+                  className={viewMode === "mine" ? "rounded-full border border-white bg-white px-3 py-2 text-black" : "rounded-full border border-gray-700 px-3 py-2 text-white"}
+                >
+                  My Posts
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-xs font-bold">
+                <button
+                  onClick={toggleSelectMode}
+                  disabled={!canManageOwn}
+                  className="rounded border border-white px-3 py-2 text-white hover:bg-white hover:text-black disabled:border-gray-800 disabled:text-gray-600"
+                >
+                  {isSelectMode ? "Done" : "Select"}
+                </button>
+                {isSelectMode && (
+                  <>
+                    <button
+                      onClick={handleSelectAllFiltered}
+                      disabled={isSelectingAll || isBulkDeleting}
+                      className="rounded border border-white px-3 py-2 text-white hover:bg-white hover:text-black disabled:border-gray-800 disabled:text-gray-600"
+                    >
+                      {isSelectingAll ? "Selecting..." : allFilteredSelected ? "Unselect" : "All"}
+                    </button>
+                    <button
+                      onClick={handleDeleteSelected}
+                      disabled={!hasSelections || isBulkDeleting}
+                      className="rounded border border-gray-700 px-3 py-2 text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                    >
+                      {isBulkDeleting ? "Deleting..." : `Delete (${selectedPublicationIds.length})`}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {publications.length === 0 ? (
+              <div className="rounded-3xl border border-gray-700 p-8 text-center text-gray-400">
+                {isFetching ? "Loading publications..." : "No publications found"}
+              </div>
+            ) : (
+              publications.map((pub) => (
+                <div
+                  key={pub.id}
+                  className={`relative rounded-3xl border border-white p-5 ${isSelectMode ? "cursor-pointer" : ""}`}
+                  onClick={(event: MouseEvent<HTMLDivElement>) => {
+                    if (!isSelectMode) {
+                      return;
+                    }
+
+                    const target = event.target as HTMLElement;
+                    if (target.closest("button,a,input,textarea,select,label,summary,details")) {
+                      return;
+                    }
+
+                    toggleSelection(pub.id);
+                  }}
+                >
+                  {isSelectMode && (
+                    <input
+                      type="checkbox"
+                      checked={selectedPublicationIds.includes(pub.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggleSelection(pub.id)}
+                      className="absolute right-5 top-5 h-4 w-4 accent-white"
+                      aria-label={`Select publication ${pub.title}`}
+                    />
+                  )}
+
+                  <h3 className="pr-8 text-lg font-bold text-white">{pub.title}</h3>
+                  <p className="mt-2 text-sm text-gray-400">{getSnippet(pub)}</p>
+
+                  <div className="mt-4 space-y-2 text-xs">
+                    <div>
+                      <p className="text-gray-400">Content Hash</p>
+                      <code className="block break-all text-white">{pub.contentHash}</code>
+                      <button onClick={() => copyToClipboard(pub.contentHash)} className="mt-1 text-gray-400 hover:text-white">
+                        Copy
+                      </button>
+                    </div>
+                    {pub.txHash && (
+                      <div>
+                        <p className="text-gray-400">Transaction Hash</p>
+                        <p className="break-all text-white">{pub.txHash}</p>
+                      </div>
+                    )}
+                    {pub.blockTimestamp && (
+                      <div>
+                        <p className="text-gray-400">Timestamp</p>
+                        <p className="text-white">{new Date(pub.blockTimestamp).toLocaleString()}</p>
+                      </div>
+                    )}
+                    {pub.parentHash && (
+                      <div>
+                        <p className="text-gray-400">Parent Hash</p>
+                        <code className="block break-all text-white">{pub.parentHash}</code>
+                      </div>
+                    )}
+                    {viewMode === "all" && (
+                      <div>
+                        <p className="text-gray-400">Publisher</p>
+                        <code className="block break-all text-white">{pub.publisherWallet}</code>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 grid gap-2">
+                    <Link href={`/publication/${pub.id}`} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                      View Details
+                    </Link>
+                    {pub.status === "CONFIRMED" && isOwnPublication(pub) && (
+                      <Link href={`/publish?parent=${pub.contentHash}`} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                        Create New Version
+                      </Link>
+                    )}
+                    {isOwnPublication(pub) && (
+                      <button
+                        onClick={() => handleDeletePublication(pub.id)}
+                        disabled={deletingId === pub.id || isBulkDeleting}
+                        className="rounded border border-gray-700 px-4 py-3 text-sm font-bold text-white hover:border-white disabled:border-gray-800 disabled:text-gray-600"
+                      >
+                        {deletingId === pub.id ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-gray-700 p-5 text-xs">
+            <p className="text-gray-400">Showing {paginationStart}-{paginationEnd} of {totalPublications}</p>
+            <div className="mt-4 grid gap-3">
+              <div>
+                <label htmlFor="pageSize-mobile" className="mb-1 block text-gray-400">Per page</label>
+                <select
+                  id="pageSize-mobile"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number.parseInt(e.target.value, 10));
+                    setCurrentPage(1);
+                  }}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-white focus:border-white focus:outline-none"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handlePageJump();
+                    }
+                  }}
+                  onBlur={handlePageJump}
+                  className="w-20 rounded border border-gray-700 bg-black px-3 py-3 text-center text-white focus:border-white focus:outline-none"
+                  aria-label="Page number"
+                />
+                <span className="text-gray-400">/ {safeTotalPages}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                <button onClick={() => setCurrentPage(1)} disabled={currentPage <= 1 || isFetching} className="rounded border border-gray-700 px-3 py-2 font-bold text-white disabled:border-gray-800 disabled:text-gray-600">«</button>
+                <button onClick={() => setCurrentPage((current) => Math.max(1, current - 1))} disabled={currentPage <= 1 || isFetching} className="rounded border border-gray-700 px-3 py-2 font-bold text-white disabled:border-gray-800 disabled:text-gray-600">Prev</button>
+                <button onClick={() => setCurrentPage((current) => Math.min(safeTotalPages, current + 1))} disabled={currentPage >= totalPages || isFetching} className="rounded border border-gray-700 px-3 py-2 font-bold text-white disabled:border-gray-800 disabled:text-gray-600">Next</button>
+                <button onClick={() => setCurrentPage(safeTotalPages)} disabled={currentPage >= totalPages || isFetching} className="rounded border border-gray-700 px-3 py-2 font-bold text-white disabled:border-gray-800 disabled:text-gray-600">»</button>
+              </div>
+            </div>
           </div>
         </div>
         {renderReturnToTopButton()}

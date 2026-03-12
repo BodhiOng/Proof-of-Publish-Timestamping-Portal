@@ -1,6 +1,100 @@
+"use client";
+
 import Link from "next/link";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 export default function CanonicalizationDocsPage() {
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+          <div className="space-y-3 border-b border-white pb-5">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="text-3xl font-bold">Canonicalization Documentation</h1>
+            <p className="text-sm text-gray-400">
+              Deterministic content normalization rules for consistent hashing
+            </p>
+          </div>
+
+          <section className="rounded-3xl border border-gray-700 p-5">
+            <h2 className="text-xl font-bold">Current App Behavior</h2>
+            <ul className="mt-3 space-y-2 text-sm text-gray-300">
+              <li>• Dashboard is wallet-scoped for connected users.</li>
+              <li>• Pagination uses page, limit, and search query params.</li>
+              <li>• Publish requires previewing canonicalized content first.</li>
+              <li>• File-based modes generate descriptor headers and hash metadata.</li>
+            </ul>
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-xl font-bold">Why Canonicalization?</h2>
+            <p className="mt-3 text-sm leading-6 text-gray-300">
+              Invisible differences like whitespace, Unicode composition, and line endings change hashes. Canonicalization removes that drift so equivalent content hashes identically everywhere.
+            </p>
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-xl font-bold">Rules</h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-2xl border border-gray-700 p-4">
+                <p className="font-bold text-white">1. Boundary trimming</p>
+                <p className="mt-2 text-gray-300">Remove leading and trailing blank lines and spaces from the full input.</p>
+              </div>
+              <div className="rounded-2xl border border-gray-700 p-4">
+                <p className="font-bold text-white">2. Line ending normalization</p>
+                <p className="mt-2 text-gray-300">Convert all endings to Unix-style LF.</p>
+              </div>
+              <div className="rounded-2xl border border-gray-700 p-4">
+                <p className="font-bold text-white">3. Trailing whitespace removal</p>
+                <p className="mt-2 text-gray-300">Strip trailing whitespace on every line.</p>
+              </div>
+              <div className="rounded-2xl border border-gray-700 p-4">
+                <p className="font-bold text-white">4. Unicode normalization</p>
+                <p className="mt-2 text-gray-300">Normalize text to NFC before hashing.</p>
+              </div>
+              <div className="rounded-2xl border border-gray-700 p-4">
+                <p className="font-bold text-white">5. Metadata exclusion</p>
+                <p className="mt-2 text-gray-300">Only canonicalized content is hashed; metadata stays separate.</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-xl font-bold">Reference Implementation</h2>
+            <div className="mt-4 rounded-2xl border border-gray-700 bg-gray-900 p-4">
+              <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs text-gray-300">
+{`function canonicalize(content: string): string {
+  return content
+    .trim()
+    .replace(/\\r\\n/g, "\\n")
+    .replace(/\\s+$/gm, "")
+    .normalize("NFC");
+}`}
+              </pre>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-gray-700 p-5">
+            <h2 className="text-xl font-bold">Testing</h2>
+            <p className="mt-3 text-sm text-gray-300">
+              Verify your implementation with the built-in developer tools and dashboard seed commands.
+            </p>
+            <Link
+              href="/dev-tools"
+              className="mt-4 inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-bold text-black hover:bg-gray-200"
+            >
+              Go to Dev Tools
+            </Link>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-4xl px-6 py-12 lg:px-12">
@@ -16,28 +110,6 @@ export default function CanonicalizationDocsPage() {
         </div>
 
         <div className="space-y-8">
-          <section className="rounded-lg border border-gray-700 bg-black p-6">
-            <h2 className="mb-4 text-2xl font-bold">Current App Behavior</h2>
-            <ul className="space-y-2 text-sm text-gray-300">
-              <li>• Dashboard list is wallet-scoped: you only see publications for the connected address.</li>
-              <li>
-                • Pagination is server-backed with
-                <code className="ml-1 rounded bg-gray-900 px-1">page</code>,
-                <code className="ml-1 rounded bg-gray-900 px-1">limit</code>, and
-                <code className="ml-1 rounded bg-gray-900 px-1">search</code> query params.
-              </li>
-              <li>• Publish flow requires previewing canonicalized content before signing/registering.</li>
-              <li>
-                • File-based publish modes (
-                <code className="rounded bg-gray-900 px-1">code</code>,
-                <code className="ml-1 rounded bg-gray-900 px-1">document</code>,
-                <code className="ml-1 rounded bg-gray-900 px-1">image</code>,
-                <code className="ml-1 rounded bg-gray-900 px-1">audio</code>,
-                <code className="ml-1 rounded bg-gray-900 px-1">video</code>) generate descriptor headers and hash metadata.
-              </li>
-            </ul>
-          </section>
-
           {/* Introduction */}
           <section className="rounded-lg border border-white bg-black p-6">
             <h2 className="mb-4 text-2xl font-bold">Why Canonicalization?</h2>
@@ -184,20 +256,6 @@ async function computeHash(content: string): Promise<string> {
 }`}
               </pre>
             </div>
-          </section>
-
-          <section className="rounded-lg border border-gray-700 bg-black p-6">
-            <h2 className="mb-4 text-2xl font-bold">Pagination Test Data</h2>
-            <p className="mb-4 text-sm text-gray-300">
-              To stress-test dashboard pagination with realistic volume:
-            </p>
-            <div className="rounded border border-gray-700 bg-gray-900 p-4 font-mono text-xs text-gray-300">
-              <p>cmd /c npm run seed -- --target 100</p>
-              <p className="mt-2">cmd /c npm run seed -- --target 100 --wallet 0xYOUR_WALLET</p>
-            </div>
-            <p className="mt-3 text-xs text-gray-400">
-              Use `--wallet` if you need all test entries visible for your connected account.
-            </p>
           </section>
 
           {/* Testing */}

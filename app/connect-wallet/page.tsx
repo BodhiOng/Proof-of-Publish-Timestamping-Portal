@@ -10,6 +10,7 @@ import {
   updateAccountProfile,
   type AccountProfile,
 } from "@/lib/api-client";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 declare global {
   interface Window {
@@ -49,6 +50,7 @@ function mapProfileToDraft(profile: AccountProfile): ProfileDraft {
 }
 
 export default function ConnectWalletPage() {
+  const isMobile = useIsMobile();
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [network, setNetwork] = useState<string>("");
@@ -113,11 +115,16 @@ export default function ConnectWalletPage() {
       if (accounts.length > 0) {
         const account = accounts[0];
         setConnectedWallet(account.address);
+        // Load critical information (network and profile)
         await Promise.all([
           updateNetworkInfo(provider),
-          updateBalance(provider, account.address),
           loadAccountProfile(account.address),
         ]);
+        // Non-blocking balance update (fire and forget)
+        updateBalance(provider, account.address).catch(() => {
+          // Silently fail if balance update has issues
+          console.warn("Balance update failed, but continuing...");
+        });
       }
     } catch (err) {
       console.error("Error checking wallet connection:", err);
@@ -161,18 +168,34 @@ export default function ConnectWalletPage() {
       const networkName = networkNames[chainIdNum] || `Chain ID: ${chainIdNum}`;
       setNetwork(networkName);
       setWrongNetwork(false);
-    } catch (err) {
-      console.error("Error getting network info:", err);
+    } catch (err: any) {
+      // Don't block if network info fails to load
+      console.warn("Warning: Could not fetch network info:", err.message);
     }
   };
 
-  const updateBalance = async (provider: BrowserProvider, address: string) => {
-    try {
-      const balanceWei = await provider.getBalance(address);
-      const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
-      setBalance(balanceEth);
-    } catch (err) {
-      console.error("Error getting balance:", err);
+  const updateBalance = async (provider: BrowserProvider, address: string, retries = 3, delay = 1000) => {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const balanceWei = await provider.getBalance(address);
+        const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
+        setBalance(balanceEth);
+        return;
+      } catch (err: any) {
+        // Check if it's an RPC rate limit error
+        const isRateLimitError = err.code === -32002 || 
+          (err.message && err.message.includes("too many errors")) ||
+          (err.message && err.message.includes("rate limit"));
+        
+        if (isRateLimitError && attempt < retries - 1) {
+          // Wait with exponential backoff before retrying
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+        } else {
+          // For non-rate-limit errors or final attempt, just log and continue
+          console.warn("Warning: Could not fetch balance:", err.message);
+          return;
+        }
+      }
     }
   };
 
@@ -193,11 +216,16 @@ export default function ConnectWalletPage() {
       if (accounts.length > 0) {
         const wallet = accounts[0];
         setConnectedWallet(wallet);
+        // Load critical information (network and profile)
         await Promise.all([
           updateNetworkInfo(provider),
-          updateBalance(provider, wallet),
           loadAccountProfile(wallet),
         ]);
+        // Non-blocking balance update (fire and forget)
+        updateBalance(provider, wallet).catch(() => {
+          // Silently fail if balance update has issues
+          console.warn("Balance update failed, but continuing...");
+        });
       }
     } catch (err: any) {
       console.error("Error connecting to MetaMask:", err);
@@ -298,6 +326,12 @@ export default function ConnectWalletPage() {
 
     try {
       const { signature, challengeMessage } = await signChallenge(connectedWallet);
+      
+      // Close MetaMask popup by refocusing main window
+      if (typeof window !== "undefined") {
+        window.focus();
+      }
+      
       const payload = {
         wallet: connectedWallet,
         signature,
@@ -345,6 +379,250 @@ export default function ConnectWalletPage() {
       setSuccess("");
     }
   };
+
+  if (isMobile) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+          <div className="space-y-3 border-b border-white pb-5">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="text-3xl font-bold">Wallet & Account</h1>
+            <p className="text-sm text-gray-400">
+              Connect your wallet and manage your account profile in one place.
+            </p>
+          </div>
+
+          {error && (
+            <div className="rounded-3xl border border-white p-4 text-sm font-bold text-white">
+              ⚠ {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-3xl border border-white p-4 text-sm font-bold text-white">
+              ✓ {success}
+            </div>
+          )}
+
+          {!connectedWallet ? (
+            <>
+              <div className="rounded-3xl border border-white p-5">
+                <h2 className="text-lg font-bold">Connect MetaMask</h2>
+                <button
+                  onClick={connectMetaMask}
+                  disabled={isConnecting || (typeof window !== "undefined" && !window.ethereum)}
+                  className="mt-4 w-full rounded bg-white px-5 py-4 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
+                >
+                  {isConnecting
+                    ? "Connecting..."
+                    : typeof window !== "undefined" && !window.ethereum
+                      ? "MetaMask Not Installed"
+                      : "Connect MetaMask"}
+                </button>
+                {isConnecting && (
+                  <p className="mt-3 text-sm text-gray-400">Please approve the connection request in MetaMask.</p>
+                )}
+              </div>
+
+              {typeof window !== "undefined" && !window.ethereum && (
+                <div className="rounded-3xl border border-white p-5">
+                  <h3 className="text-sm font-bold">MetaMask Not Detected</h3>
+                  <p className="mt-2 text-xs leading-6 text-gray-400">
+                    MetaMask is required to connect your wallet. Install the browser extension to continue.
+                  </p>
+                  <a
+                    href="https://metamask.io/download/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex rounded bg-white px-4 py-2 text-sm font-bold text-black hover:bg-gray-200"
+                  >
+                    Install MetaMask →
+                  </a>
+                </div>
+              )}
+
+              <div className="rounded-3xl border border-gray-700 p-5">
+                <h3 className="text-sm font-bold">Why connect your wallet?</h3>
+                <ul className="mt-3 space-y-2 text-xs text-gray-400">
+                  <li>• Sign ownership-proof actions with your own key</li>
+                  <li>• Create and update your profile securely</li>
+                  <li>• Publish and manage verifiable provenance</li>
+                </ul>
+              </div>
+            </>
+          ) : (
+            <>
+              <section className="rounded-3xl border border-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold">Wallet Connected</h2>
+                  <span className="inline-flex items-center gap-2 text-xs font-bold">
+                    <span className="h-2 w-2 rounded-full bg-white"></span>
+                    ACTIVE
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <div>
+                    <p className="mb-1 font-bold text-gray-400">Wallet Address</p>
+                    <code className="block break-all rounded border border-gray-700 p-3 text-xs text-white">
+                      {connectedWallet}
+                    </code>
+                  </div>
+                  <div>
+                    <p className="mb-1 font-bold text-gray-400">Network</p>
+                    <p className="text-white">{network}</p>
+                    {chainId && <p className="text-xs text-gray-400">Chain ID: {chainId}</p>}
+                  </div>
+                  {balance && (
+                    <div>
+                      <p className="mb-1 font-bold text-gray-400">Balance</p>
+                      <p className="text-white">{balance} ETH</p>
+                    </div>
+                  )}
+                </div>
+
+                {wrongNetwork && (
+                  <div className="mt-4 rounded-2xl border border-white p-4">
+                    <p className="text-sm font-bold text-white">Wrong Network</p>
+                    <p className="mt-2 text-xs text-gray-400">Switch to Ethereum Mainnet to use this application.</p>
+                    <button
+                      onClick={switchNetwork}
+                      className="mt-3 w-full rounded bg-white px-4 py-2 font-bold text-black hover:bg-gray-200"
+                    >
+                      Switch to Ethereum Mainnet
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-4 grid gap-2">
+                  <Link href="/publish" className="rounded bg-white px-5 py-3 text-center font-bold text-black hover:bg-gray-200">
+                    Go to Publish
+                  </Link>
+                  <Link href="/dashboard" className="rounded border border-white px-5 py-3 text-center font-bold text-white hover:bg-white hover:text-black">
+                    Go to Dashboard
+                  </Link>
+                  <button
+                    onClick={disconnect}
+                    className="rounded border border-gray-700 px-5 py-3 font-bold text-white hover:border-white"
+                  >
+                    Disconnect Wallet
+                  </button>
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold">{profile ? "Edit Account Profile" : "Create Account Profile"}</h2>
+                  <span className="rounded-full border border-gray-700 px-3 py-1 text-[10px] text-gray-300">
+                    {profile ? "Profile exists" : "No profile yet"}
+                  </span>
+                </div>
+
+                {isLoadingProfile ? (
+                  <div className="mt-4 rounded border border-gray-700 p-4 text-sm text-gray-400">Loading profile...</div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label htmlFor="username" className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-300">
+                        Username
+                      </label>
+                      <input
+                        id="username"
+                        value={draft.username}
+                        onChange={(e) => onProfileFieldChange("username", e.target.value)}
+                        placeholder="your_handle"
+                        className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="displayName" className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-300">
+                        Display Name
+                      </label>
+                      <input
+                        id="displayName"
+                        value={draft.displayName}
+                        onChange={(e) => onProfileFieldChange("displayName", e.target.value)}
+                        placeholder="John Doe"
+                        className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="bio" className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-300">
+                        Bio
+                      </label>
+                      <textarea
+                        id="bio"
+                        value={draft.bio}
+                        onChange={(e) => onProfileFieldChange("bio", e.target.value)}
+                        rows={4}
+                        placeholder="What do you publish and verify?"
+                        className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="avatar-upload-mobile" className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-300">
+                        Profile Picture
+                      </label>
+                      <input
+                        id="avatar-upload-mobile"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarUpload}
+                        className="hidden"
+                      />
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <label htmlFor="avatar-upload-mobile" className="cursor-pointer rounded border border-white px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black">
+                          {draft.avatarUrl ? "Change Image" : "Upload Image"}
+                        </label>
+                        {draft.avatarUrl && (
+                          <button type="button" onClick={clearAvatar} className="rounded border border-gray-700 px-3 py-2 text-xs font-bold text-gray-300 hover:border-white hover:text-white">
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="website" className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-300">
+                        Website
+                      </label>
+                      <input
+                        id="website"
+                        value={draft.website}
+                        onChange={(e) => onProfileFieldChange("website", e.target.value)}
+                        placeholder="https://..."
+                        className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="location" className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-300">
+                        Location
+                      </label>
+                      <input
+                        id="location"
+                        value={draft.location}
+                        onChange={(e) => onProfileFieldChange("location", e.target.value)}
+                        placeholder="Singapore"
+                        className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                      />
+                    </div>
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={!canSaveProfile}
+                      className="w-full rounded-full bg-white px-6 py-3 text-sm font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-500"
+                    >
+                      {isSavingProfile ? "Requesting wallet signature..." : profile ? "Save Profile" : "Create Account"}
+                    </button>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-black text-white">

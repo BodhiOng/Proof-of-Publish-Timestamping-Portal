@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { sha256 } from "ethers";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWallet } from "@/hooks/useWallet";
 import {
   canonicalizePublicationContent,
@@ -73,6 +75,20 @@ function resolveMimeType(file: File): string {
   if (existing) return existing;
   const extension = getFileExtension(file.name);
   return EXTENSION_MIME_MAP[extension] || "application/octet-stream";
+}
+
+async function computeSha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle?.digest) {
+    const hashBuffer = await subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  // Fallback for browsers where Web Crypto is unavailable.
+  const digestWithPrefix = sha256(new Uint8Array(bytes));
+  return digestWithPrefix.startsWith("0x") ? digestWithPrefix.slice(2) : digestWithPrefix;
 }
 
 function formatFileSize(value: number): string {
@@ -147,8 +163,25 @@ function parseContentType(value: string): ContentType | null {
   return null;
 }
 
+function PublishingOverlay() {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/30 bg-black/70 px-7 py-6">
+        <div
+          className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-white"
+          role="status"
+          aria-label="Publishing in progress"
+        />
+        <p className="text-sm font-bold text-white">Publishing in progress...</p>
+        <p className="text-xs text-gray-300">Please wait and do not close this page.</p>
+      </div>
+    </div>
+  );
+}
+
 export default function PublishPage() {
   const { isConnected, address, isLoading } = useWallet();
+  const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastAppliedParentPrefillRef = useRef("");
@@ -469,8 +502,24 @@ export default function PublishPage() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for environments where clipboard API is unavailable
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    } catch (err) {
+      console.warn("Failed to copy to clipboard:", err);
+    }
   };
 
   const handleClearPublicationDetails = () => {
@@ -568,10 +617,7 @@ export default function PublishPage() {
 
       const resolvedMimeType = resolveMimeType(file);
       const bytes = await readFileWithProgress<ArrayBuffer>("arrayBuffer");
-      const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
-      const hashHex = Array.from(new Uint8Array(hashBuffer))
-        .map((value) => value.toString(16).padStart(2, "0"))
-        .join("");
+      const hashHex = await computeSha256Hex(bytes);
 
       // Persist full file data so publication details can always provide downloads.
       const previewDataUrlRaw = await readFileWithProgress<string>("dataUrl");
@@ -639,6 +685,7 @@ export default function PublishPage() {
   };
 
   const isUploadComplete = !isUploadingFile && uploadProgress === 100;
+  const showPublishingOverlay = isSigning || publicationStatus === "PENDING";
   const canonicalizedContentSizeBytes = new TextEncoder().encode(canonicalizedContent).length;
   const canonicalizedPreviewLimitBytes = MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE[contentType]
     ?? DEFAULT_MAX_CANONICALIZED_PREVIEW_BYTES;
@@ -646,6 +693,22 @@ export default function PublishPage() {
 
   // Loading state
   if (isLoading) {
+    if (isMobile) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+            <div className="border-b border-white pb-5">
+              <Link href="/" className="text-sm text-gray-400 hover:text-white">
+                ← Back to Home
+              </Link>
+              <h1 className="mt-3 text-3xl font-bold">Publish Content</h1>
+            </div>
+            <div className="rounded-3xl border border-white p-8 text-center text-gray-400">Loading...</div>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-screen bg-black text-white">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
@@ -665,6 +728,42 @@ export default function PublishPage() {
 
   // Not connected state
   if (!isConnected) {
+    if (isMobile) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+            <div className="space-y-3 border-b border-white pb-5">
+              <Link href="/" className="text-sm text-gray-400 hover:text-white">
+                ← Back to Home
+              </Link>
+              <h1 className="text-3xl font-bold">Publish Content</h1>
+              <p className="text-sm text-gray-400">Create a new proof-of-publish on-chain record</p>
+            </div>
+
+            <div className="rounded-3xl border border-white p-6 text-center">
+              <h2 className="text-2xl font-bold">Wallet Connection Required</h2>
+              <p className="mt-3 text-sm text-gray-400">
+                Connect your MetaMask wallet before publishing content on-chain.
+              </p>
+              <Link href="/connect-wallet" className="mt-5 inline-flex rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200">
+                Connect MetaMask Wallet
+              </Link>
+            </div>
+
+            <div className="rounded-3xl border border-gray-700 p-5">
+              <h3 className="text-sm font-bold">Why do I need to connect?</h3>
+              <ul className="mt-3 space-y-2 text-xs text-gray-400">
+                <li>• Sign transactions to register hashes on-chain</li>
+                <li>• Prove authorship and publication timestamp</li>
+                <li>• Keep custody of your cryptographic identity</li>
+                <li>• Only hashes and metadata are stored</li>
+              </ul>
+            </div>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-screen bg-black text-white">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
@@ -712,6 +811,301 @@ export default function PublishPage() {
             </div>
           </div>
         </div>
+      </main>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+          <div className="space-y-3 border-b border-white pb-5">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="text-3xl font-bold">Publish Content</h1>
+            <p className="text-sm text-gray-400">Create a new proof-of-publish on-chain record</p>
+            <div className="text-xs text-gray-400">
+              Connected Wallet <code className="ml-2 text-white">{address?.slice(0, 6)}...{address?.slice(-4)}</code>
+            </div>
+          </div>
+
+          <section className="rounded-3xl border border-white p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-bold">Content Details</h2>
+              <button
+                type="button"
+                onClick={handleClearPublicationDetails}
+                disabled={isSigning}
+                className="rounded border border-white px-3 py-2 text-xs font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="title-mobile" className="mb-2 block text-sm font-bold">Title *</label>
+                <input
+                  id="title-mobile"
+                  type="text"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (!hasFilledTitleBefore && e.target.value.trim().length > 0) {
+                      setHasFilledTitleBefore(true);
+                    }
+                  }}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-white focus:border-white focus:outline-none"
+                  placeholder="Enter content title"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="contentType-mobile" className="mb-2 block text-sm font-bold">Content Type *</label>
+                <select
+                  id="contentType-mobile"
+                  value={contentType}
+                  onChange={(e) => {
+                    setContentType(e.target.value as ContentType);
+                    setUploadedFileName("");
+                    setContent("");
+                    setFilePayload("");
+                    setCanonicalizedContent("");
+                    setComputedHash("");
+                    setDuplicatePublicationId(null);
+                    setUploadProgress(0);
+                    setUploadWarning("");
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                    }
+                  }}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-white focus:border-white focus:outline-none"
+                >
+                  <option value="text">Plain Text</option>
+                  <option value="article">Article</option>
+                  <option value="code">Code</option>
+                  <option value="document">Document</option>
+                  <option value="image">Image</option>
+                  <option value="audio">Audio</option>
+                  <option value="video">Video</option>
+                </select>
+              </div>
+
+              {supportsFileUpload && (
+                <div>
+                  <label htmlFor="file-upload-mobile" className="mb-2 block text-sm font-bold">
+                    Upload {contentType === "document" ? "Document" : contentType.charAt(0).toUpperCase() + contentType.slice(1)} File
+                  </label>
+                  <input
+                    ref={fileInputRef}
+                    id="file-upload-mobile"
+                    type="file"
+                    accept={fileAccept}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <label htmlFor="file-upload-mobile" className="flex cursor-pointer items-center justify-center rounded border border-gray-700 px-4 py-5 text-center hover:border-white">
+                    <div>
+                      <p className="font-bold text-white">Click to upload file</p>
+                      <p className="mt-1 text-xs text-gray-400">{uploadedFileName || "No file selected"}</p>
+                    </div>
+                  </label>
+                  <p className="mt-2 text-xs text-gray-400">Accepted formats: {acceptedFormatsLabel}</p>
+                  {uploadSizeLimitText && <p className="mt-1 text-xs text-gray-400">{uploadSizeLimitText}</p>}
+                  {uploadWarning && <p className="mt-2 text-xs font-bold text-white">⚠ {uploadWarning}</p>}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="content-mobile" className="mb-2 block text-sm font-bold">Content {!supportsFileUpload ? "*" : ""}</label>
+                <textarea
+                  id="content-mobile"
+                  value={content}
+                  onChange={(e) => {
+                    setContent(e.target.value);
+                    setFilePayload("");
+                    setDuplicatePublicationId(null);
+                  }}
+                  readOnly={isContentReadOnly}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 font-mono text-sm text-white focus:border-white focus:outline-none read-only:cursor-not-allowed read-only:opacity-80"
+                  rows={12}
+                  placeholder={supportsFileUpload ? "Upload a file above to populate content..." : "Enter or paste your content here..."}
+                />
+              </div>
+
+              {contentType === "article" && (
+                <div>
+                  <label htmlFor="sourceUrl-mobile" className="mb-2 block text-sm font-bold">Source URL</label>
+                  <input
+                    id="sourceUrl-mobile"
+                    type="url"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                    className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-white focus:border-white focus:outline-none"
+                    placeholder="https://example.com/original-content"
+                  />
+                  <button
+                    onClick={handleScrapeArticle}
+                    type="button"
+                    disabled={!sourceUrl.trim() || isScrapingArticle || isSigning}
+                    className="mt-3 w-full rounded border border-white px-4 py-3 text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+                  >
+                    {isScrapingArticle ? "Scraping..." : "Scrape URL into Content"}
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="parentHash-mobile" className="mb-2 block text-sm font-bold">Parent Hash</label>
+                <input
+                  id="parentHash-mobile"
+                  type="text"
+                  list="parentHashSuggestions"
+                  autoComplete="off"
+                  value={parentHash}
+                  onChange={(e) => setParentHash(e.target.value)}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 font-mono text-sm text-white focus:border-white focus:outline-none"
+                  placeholder="0x..."
+                />
+                <datalist id="parentHashSuggestions">
+                  {filteredParentHashSuggestions.map((hash) => (
+                    <option key={hash} value={hash} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-2">
+            <button
+              onClick={handlePreview}
+              disabled={!title || (!isCodeType && !isContentOptional && !content) || (isCodeType && !isCodeInputValid) || isSigning || publicationStatus === "PENDING"}
+              className="rounded-full border border-white px-6 py-3 font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+            >
+              Preview Canonicalized
+            </button>
+            <button
+              onClick={handleSignAndRegister}
+              disabled={!computedHash || isSigning || isValidatingParentHash || Boolean(duplicatePublicationId) || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
+              className="rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
+            >
+              {isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
+            </button>
+          </div>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Canonicalized Preview</h2>
+            {canonicalizedContent ? (
+              <>
+                {isCanonicalizedPreviewTooLarge ? (
+                  <div className="mt-4 rounded border border-gray-700 p-4 text-sm text-gray-300">
+                    Canonicalized content will not be previewed because it is too large ({formatFileSize(canonicalizedContentSizeBytes)}).
+                  </div>
+                ) : (
+                  <div className="mt-4 max-h-[280px] overflow-y-auto rounded border border-gray-700 p-4">
+                    <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">{canonicalizedContent}</pre>
+                  </div>
+                )}
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm font-bold">Computed Hash</label>
+                  <code className="block break-all rounded border border-gray-700 px-3 py-3 font-mono text-xs text-white">{computedHash}</code>
+                  <button onClick={() => copyToClipboard(computedHash)} className="mt-3 w-full rounded border border-white px-4 py-2 text-xs font-bold text-white hover:bg-white hover:text-black">
+                    Copy Hash
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded border border-gray-700 p-6 text-center text-gray-400">
+                Click "Preview Canonicalized" to see normalized content and computed hash.
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Publication Status</h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-bold">Status</span>
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                  isSigning ? "border-gray-700 text-gray-400" :
+                  publicationStatus === "CONFIRMED" ? "border-white bg-white text-black" :
+                  publicationStatus === "FAILED" ? "border-white text-white" :
+                  "border-gray-700 text-gray-400"
+                }`}>
+                  {isSigning ? "SIGNING" : publicationStatus || "NOT STARTED"}
+                </span>
+              </div>
+              {txHash && <code className="block break-all rounded border border-gray-700 px-3 py-3 text-xs text-white">{txHash}</code>}
+              {blockTimestamp && <p className="text-white">{new Date(blockTimestamp).toLocaleString()}</p>}
+              {publicationId && <p className="text-white">Publication #{publicationId}</p>}
+              {publicationStatus === "CONFIRMED" && (
+                <div className="grid gap-2">
+                  <Link href={`/publication/${publicationId}`} className="rounded-full border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                    View Details
+                  </Link>
+                  <Link href="/dashboard" className="rounded-full border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                    Go to Dashboard
+                  </Link>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {error && (
+            <div className="rounded-3xl border border-white p-4 text-sm font-bold text-white">
+              ⚠ {error}
+            </div>
+          )}
+
+          <section className="rounded-3xl border border-gray-700 p-5">
+            <h3 className="text-sm font-bold">How it works</h3>
+            <ul className="mt-3 space-y-2 text-xs text-gray-400">
+              <li>• Content is canonicalized using deterministic rules</li>
+              <li>• SHA-256 is computed locally in your browser</li>
+              <li>• Your wallet signs the transaction with the hash</li>
+              <li>• The hash is registered on-chain with metadata</li>
+            </ul>
+          </section>
+        </div>
+
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-end bg-black/80">
+            <div className="w-full rounded-t-[2rem] border border-white bg-black p-5">
+              <h2 className="text-xl font-bold">Confirm Publication</h2>
+              <div className="mt-4 space-y-3 text-sm">
+                <div>
+                  <p className="text-xs font-bold text-gray-400">Title</p>
+                  <p className="text-white">{title}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">Content Type</p>
+                  <p className="text-white">{contentType}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">Hash to Register</p>
+                  <code className="block break-all rounded border border-gray-700 p-3 text-xs text-white">{computedHash}</code>
+                </div>
+                {parentHash && (
+                  <div>
+                    <p className="text-xs font-bold text-gray-400">Parent Hash</p>
+                    <code className="block break-all rounded border border-gray-700 p-3 text-xs text-white">{parentHash}</code>
+                  </div>
+                )}
+              </div>
+              <div className="mt-5 grid gap-2">
+                <button onClick={() => setShowConfirmModal(false)} className="rounded-full border border-white px-6 py-3 font-bold text-white hover:bg-white hover:text-black">
+                  Cancel
+                </button>
+                <button onClick={confirmPublish} className="rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200">
+                  Confirm & Sign
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showPublishingOverlay && <PublishingOverlay />}
       </main>
     );
   }
@@ -1161,6 +1555,8 @@ export default function PublishPage() {
           </div>
         </div>
       )}
+
+      {showPublishingOverlay && <PublishingOverlay />}
     </main>
   );
 }

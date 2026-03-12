@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { getAccountProfile, getPublicationById, type AccountProfile } from "@/lib/api-client";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 type Publication = {
   id: string;
@@ -77,6 +78,7 @@ export default function PublicationDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const isMobile = useIsMobile();
   const [publication, setPublication] = useState<Publication | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -180,6 +182,21 @@ export default function PublicationDetailPage({
   }, [publication?.publisherWallet]);
 
   if (loading) {
+    if (isMobile) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+            <div className="border-b border-white pb-5">
+              <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white">
+                ← Back to Dashboard
+              </Link>
+            </div>
+            <div className="rounded-3xl border border-white p-8 text-center text-gray-400">Loading publication...</div>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-screen bg-black text-white">
         <div className="mx-auto max-w-5xl px-6 py-12 lg:px-12">
@@ -197,6 +214,27 @@ export default function PublicationDetailPage({
   }
 
   if (error || !publication) {
+    if (isMobile) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+            <div className="border-b border-white pb-5">
+              <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white">
+                ← Back to Dashboard
+              </Link>
+            </div>
+            <div className="rounded-3xl border border-white p-8 text-center">
+              <h2 className="text-2xl font-bold">Publication Not Found</h2>
+              <p className="mt-3 text-sm text-gray-400">{error || "The publication you're looking for doesn't exist."}</p>
+              <Link href="/dashboard" className="mt-5 inline-flex rounded-full bg-white px-5 py-3 text-sm font-bold text-black hover:bg-gray-200">
+                Go to Dashboard
+              </Link>
+            </div>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-screen bg-black text-white">
         <div className="mx-auto max-w-5xl px-6 py-12 lg:px-12">
@@ -220,8 +258,37 @@ export default function PublicationDetailPage({
     );
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      if (typeof document !== "undefined") {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+
+        const copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+
+        if (copied) {
+          return;
+        }
+      }
+
+      throw new Error("Clipboard API unavailable");
+    } catch (err) {
+      console.error("Failed to copy to clipboard:", err);
+      if (typeof window !== "undefined") {
+        window.alert("Copy failed. Please copy the value manually.");
+      }
+    }
   };
 
   const downloadCanonicalizedDocumentText = () => {
@@ -281,6 +348,240 @@ export default function PublicationDetailPage({
     .trim();
   const useScrollableCanonicalizedWindow = publication.contentType === "text" || publication.contentType === "article";
 
+  if (isMobile) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        {newChildVersionId && (
+          <div className="sticky top-3 z-50 mx-4 rounded-3xl border border-white bg-black p-4 shadow-xl">
+            <p className="text-sm font-bold text-white">New Child Version Detected</p>
+            <p className="mt-1 text-xs text-gray-400">This publication just received a new child in the version chain.</p>
+            <div className="mt-3 grid gap-2">
+              <Link href={`/publication/${newChildVersionId}`} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                Open Child Version
+              </Link>
+              <button onClick={() => setNewChildVersionId(null)} className="rounded border border-gray-700 px-4 py-3 text-sm font-bold text-white hover:border-white">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+          <div className="space-y-3 border-b border-white pb-5">
+            <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Dashboard
+            </Link>
+            <h1 className="text-3xl font-bold">{publication.title}</h1>
+            <p className="text-sm text-gray-400">Publication #{publication.id}</p>
+          </div>
+
+          {hasFileDescriptor && (
+            <section className="rounded-3xl border border-white p-5">
+              <h2 className="text-lg font-bold">{isDocumentPublication ? "Uploaded File" : "Uploaded File Preview"}</h2>
+              <div className="mt-4 rounded-2xl border border-gray-700 p-4 text-sm">
+                <p className="text-white"><span className="font-bold text-gray-400">Name:</span> <span className="break-all">{parsedFile.fileName}</span></p>
+                <p className="mt-2 text-white"><span className="font-bold text-gray-400">Type:</span> <span className="break-all">{parsedFile.mimeType}</span></p>
+                {parsedFile.sizeText && <p className="mt-2 text-white"><span className="font-bold text-gray-400">Size:</span> {formatBytes(parsedFile.sizeText)}</p>}
+              </div>
+              {!parsedFile.dataUrl && (
+                <div className="mt-4 rounded border border-gray-700 p-4 text-sm text-gray-400">
+                  Inline preview unavailable for this publication.
+                </div>
+              )}
+              {parsedFile.dataUrl && parsedFile.mimeType?.startsWith("image/") && (
+                <img src={parsedFile.dataUrl} alt={parsedFile.fileName || "Uploaded image"} className="mt-4 w-full rounded border border-gray-700 object-contain" />
+              )}
+              {parsedFile.dataUrl && parsedFile.mimeType?.startsWith("audio/") && (
+                <audio controls src={parsedFile.dataUrl} className="mt-4 w-full" />
+              )}
+              {parsedFile.dataUrl && parsedFile.mimeType?.startsWith("video/") && (
+                <video controls src={parsedFile.dataUrl} className="mt-4 w-full rounded border border-gray-700" />
+              )}
+              {parsedFile.dataUrl && (
+                <a href={parsedFile.dataUrl} download={parsedFile.fileName} className="mt-4 inline-flex w-full justify-center rounded border border-white px-4 py-3 text-sm font-bold text-white hover:bg-white hover:text-black">
+                  {isDocumentPublication ? "Download Document" : publication.contentType === "code" ? "Download Code File" : "Download Uploaded File"}
+                </a>
+              )}
+            </section>
+          )}
+
+          {isDocumentPublication && !hasFileDescriptor && (
+            <section className="rounded-3xl border border-white p-5">
+              <h2 className="text-lg font-bold">Document Download</h2>
+              <p className="mt-3 text-sm text-gray-400">Original uploaded file is unavailable for this publication record.</p>
+              <div className="mt-4 grid gap-2">
+                <button onClick={downloadCanonicalizedDocumentText} className="rounded border border-white px-4 py-3 text-sm font-bold text-white hover:bg-white hover:text-black">
+                  Download Document Text
+                </button>
+                <a href={`/api/publications/${publication.id}/content`} target="_blank" rel="noopener noreferrer" className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                  Open Full Content
+                </a>
+              </div>
+            </section>
+          )}
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Canonicalized Content</h2>
+            <div className="mt-4 rounded border border-gray-700 p-4">
+              {isCanonicalizedPreviewTooLarge ? (
+                <p className="text-sm text-gray-300">Canonicalized content will not be previewed here because this {publication.contentType} upload is too large ({formatBytes(parsedFile.sizeText)}).</p>
+              ) : (
+                <div className={useScrollableCanonicalizedWindow ? "max-h-[280px] overflow-y-auto" : ""}>
+                  <pre className="whitespace-pre-wrap break-words font-mono text-sm text-gray-300">{canonicalizedContentDisplay}</pre>
+                </div>
+              )}
+            </div>
+            <div className="mt-4 grid gap-2">
+              {(publication.contentType === "text" || publication.contentType === "article") && (
+                <button onClick={downloadCanonicalizedContentText} className="rounded border border-gray-700 px-4 py-3 text-sm font-bold text-white hover:border-white">
+                  Download TXT
+                </button>
+              )}
+              <a href={`/api/publications/${publication.id}/content`} target="_blank" rel="noopener noreferrer" className="rounded border border-gray-700 px-4 py-3 text-center text-sm font-bold text-white hover:border-white">
+                Show Full Content
+              </a>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Content Metadata</h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <div><p className="text-xs font-bold text-gray-400">Title</p><p className="text-white">{publication.title}</p></div>
+              <div><p className="text-xs font-bold text-gray-400">Content Type</p><p className="text-white">{publication.contentType}</p></div>
+              {publication.sourceUrl && (
+                <div>
+                  <p className="text-xs font-bold text-gray-400">Source URL</p>
+                  <a href={publication.sourceUrl} target="_blank" rel="noopener noreferrer" className="break-all text-white hover:underline">{publication.sourceUrl}</a>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-bold text-gray-400">Publisher</p>
+                <code className="block break-all text-white">{publication.publisherWallet}</code>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400">Content Hash</p>
+                <code className="block break-all text-white">{publication.contentHash}</code>
+                <button onClick={() => copyToClipboard(publication.contentHash)} className="mt-1 text-xs text-gray-400 hover:text-white">Copy Full</button>
+              </div>
+              {publication.parentHash && (
+                <div>
+                  <p className="text-xs font-bold text-gray-400">Parent Hash</p>
+                  <code className="block break-all text-white">{publication.parentHash}</code>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">On-chain Information</h2>
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-bold text-gray-400">Transaction Hash</p>
+                <code className="block break-all text-white">{publication.txHash}</code>
+                <button onClick={() => copyToClipboard(publication.txHash)} className="mt-1 text-xs text-gray-400 hover:text-white">Copy Full</button>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400">Block Timestamp</p>
+                <p className="text-white">{new Date(publication.blockTimestamp).toLocaleString()}</p>
+              </div>
+            </div>
+          </section>
+
+          {(publication.prevVersion || publication.nextVersion) && (
+            <section className="rounded-3xl border border-gray-700 p-5">
+              <h2 className="text-lg font-bold">Version Chain</h2>
+              <div className="mt-4 grid gap-2">
+                {publication.prevVersion ? (
+                  <Link href={`/publication/${publication.prevVersion}`} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                    ← Previous Version
+                  </Link>
+                ) : (
+                  <div className="rounded border border-gray-700 px-4 py-3 text-center text-sm font-bold text-gray-700">No Previous Version</div>
+                )}
+                {publication.nextVersion ? (
+                  <Link href={`/publication/${publication.nextVersion}`} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                    Next Version →
+                  </Link>
+                ) : (
+                  <div className="rounded border border-gray-700 px-4 py-3 text-center text-sm font-bold text-gray-700">No Next Version</div>
+                )}
+              </div>
+            </section>
+          )}
+
+          <section className="rounded-3xl border border-gray-700 p-5">
+            <h2 className="text-lg font-bold">Publisher Profile</h2>
+            {isLoadingPublisherProfile ? (
+              <p className="mt-3 text-xs text-gray-400">Loading publisher profile...</p>
+            ) : publisherProfile ? (
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 overflow-hidden rounded-full border border-gray-700 bg-black">
+                    {publisherProfile.avatarUrl ? (
+                      <img src={publisherProfile.avatarUrl} alt={`${publisherProfile.displayName || publisherProfile.username} avatar`} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-gray-500">
+                        {publisherProfile.username.slice(0, 2).toUpperCase() || "NA"}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-bold text-white">{publisherProfile.displayName || publisherProfile.username}</p>
+                    <p className="text-xs text-gray-400">@{publisherProfile.username}</p>
+                  </div>
+                </div>
+                {publisherProfile.bio && <p className="text-xs text-gray-300">{publisherProfile.bio}</p>}
+
+                {(publisherProfile.website || publisherProfile.location) && (
+                  <div className="flex flex-wrap gap-2">
+                    {publisherProfile.website && (
+                      <a
+                        href={publisherProfile.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-gray-700 px-3 py-1 text-xs text-white hover:border-white"
+                      >
+                        🌐 Website
+                      </a>
+                    )}
+                    {publisherProfile.location && (
+                      <span className="rounded-full border border-gray-700 px-3 py-1 text-xs text-gray-300">
+                        📍 {publisherProfile.location}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-xs font-bold text-gray-400">Wallet</p>
+                  <code className="block break-all text-xs text-white">{publication.publisherWallet}</code>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2 text-xs text-gray-400">
+                <p>No account profile found for this publisher wallet.</p>
+                <p className="text-xs font-bold text-gray-400">Wallet</p>
+                <code className="block break-all text-white">{publication.publisherWallet}</code>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Actions</h2>
+            <div className="mt-4 grid gap-2">
+              <Link href={`/publish?parent=${publication.contentHash}`} className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                Create New Version
+              </Link>
+              <Link href="/verify" className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
+                Verify Content
+              </Link>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black text-white">
       {newChildVersionId && (
@@ -328,8 +629,8 @@ export default function PublicationDetailPage({
                 <h2 className="mb-4 text-xl font-bold">{isDocumentPublication ? "Uploaded File" : "Uploaded File Preview"}</h2>
 
                 <div className="mb-4 rounded border border-gray-700 bg-black p-4 text-sm">
-                  <p className="text-white"><span className="font-bold text-gray-400">Name:</span> {parsedFile.fileName}</p>
-                  <p className="text-white"><span className="font-bold text-gray-400">Type:</span> {parsedFile.mimeType}</p>
+                  <p className="text-white"><span className="font-bold text-gray-400">Name:</span> <span className="break-all">{parsedFile.fileName}</span></p>
+                  <p className="text-white"><span className="font-bold text-gray-400">Type:</span> <span className="break-all">{parsedFile.mimeType}</span></p>
                   {parsedFile.sizeText && (
                     <p className="text-white"><span className="font-bold text-gray-400">Size:</span> {formatBytes(parsedFile.sizeText)}</p>
                   )}

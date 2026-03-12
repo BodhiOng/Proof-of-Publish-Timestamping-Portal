@@ -32,11 +32,13 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <header className="sticky top-0 z-50 border-b border-white bg-black/90 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 lg:px-12">
-            <Link href="/" className="text-sm font-bold text-white hover:underline">
+          <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4 lg:px-12">
+            <Link href="/" className="text-center text-base font-bold text-white hover:underline sm:text-left sm:text-sm">
               Proof of Publish
             </Link>
-            <TopNav />
+            <div className="w-full border-t border-gray-800 pt-2 sm:w-auto sm:border-t-0 sm:pt-0">
+              <TopNav />
+            </div>
           </div>
         </header>
         <ScrollToTopOnRouteChange />

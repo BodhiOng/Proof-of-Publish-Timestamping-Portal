@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { sha256 } from "ethers";
 import { verifyPublicationContent } from "@/lib/api-client";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 type InputMethod = "text" | "file" | "url";
 type VerificationResult = {
@@ -54,7 +56,22 @@ function resolveMimeType(file: File): string {
   return EXTENSION_MIME_MAP[extension] || "application/octet-stream";
 }
 
+async function computeSha256Hex(bytes: Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle?.digest) {
+    const hashBuffer = await subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  // Fallback for environments where Web Crypto is unavailable.
+  const digestWithPrefix = sha256(bytes);
+  return digestWithPrefix.startsWith("0x") ? digestWithPrefix.slice(2) : digestWithPrefix;
+}
+
 export default function VerifyPage() {
+  const isMobile = useIsMobile();
   const [inputMethod, setInputMethod] = useState<InputMethod>("text");
   const [textContent, setTextContent] = useState("");
   const [url, setUrl] = useState("");
@@ -78,10 +95,7 @@ export default function VerifyPage() {
     try {
       const resolvedMimeType = resolveMimeType(file);
       const bytes = await file.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
-      const hashHex = Array.from(new Uint8Array(hashBuffer))
-        .map((value) => value.toString(16).padStart(2, "0"))
-        .join("");
+      const hashHex = await computeSha256Hex(new Uint8Array(bytes));
 
       const previewDataUrlRaw = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -146,9 +160,205 @@ export default function VerifyPage() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      if (typeof document !== "undefined") {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+
+        const copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+        if (copied) {
+          return;
+        }
+      }
+
+      throw new Error("Clipboard API unavailable");
+    } catch (err) {
+      console.error("Failed to copy to clipboard:", err);
+      if (typeof window !== "undefined") {
+        window.alert("Copy failed. Please copy the value manually.");
+      }
+    }
   };
+
+  if (isMobile) {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+          <div className="space-y-3 border-b border-white pb-5">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="text-3xl font-bold">Verify Content</h1>
+            <p className="text-sm text-gray-400">
+              Check whether your content matches an on-chain proof-of-publish record.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-gray-700 p-4 text-sm text-gray-300">
+            <span className="font-bold text-white">Privacy-first:</span> Canonicalization and hashing happen locally in your browser.
+          </div>
+
+          <div className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Input Method</h2>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-xs font-bold">
+              <button
+                onClick={() => setInputMethod("text")}
+                className={inputMethod === "text" ? "rounded px-3 py-2 bg-white text-black" : "rounded border border-gray-700 px-3 py-2 text-white"}
+              >
+                Text
+              </button>
+              <button
+                onClick={() => setInputMethod("file")}
+                className={inputMethod === "file" ? "rounded px-3 py-2 bg-white text-black" : "rounded border border-gray-700 px-3 py-2 text-white"}
+              >
+                File
+              </button>
+              <button
+                onClick={() => setInputMethod("url")}
+                className={inputMethod === "url" ? "rounded px-3 py-2 bg-white text-black" : "rounded border border-gray-700 px-3 py-2 text-white"}
+              >
+                URL
+              </button>
+            </div>
+
+            {inputMethod === "text" && (
+              <div className="mt-4">
+                <textarea
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 font-mono text-sm text-white focus:border-white focus:outline-none"
+                  rows={12}
+                  placeholder="Paste your content here..."
+                />
+                <p className="mt-1 text-xs text-gray-400">{textContent.length} characters</p>
+              </div>
+            )}
+
+            {inputMethod === "file" && (
+              <div className="mt-4">
+                <input
+                  id="file-upload-mobile"
+                  type="file"
+                  onChange={handleFileUpload}
+                  accept=".js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sol,.json,.xml,.html,.css,.scss,.sh,.bat,.ps1,.md,.pdf,.doc,.docx,.txt,.rtf,.odt,image/*,audio/*,video/*"
+                  className="hidden"
+                />
+                <label htmlFor="file-upload-mobile" className="flex cursor-pointer items-center justify-center rounded border border-gray-700 px-4 py-8 text-center hover:border-white">
+                  <div>
+                    <p className="font-bold text-white">Click to upload</p>
+                    <p className="mt-1 text-xs text-gray-400">{fileName || "Supports code, document, image, audio, and video files"}</p>
+                  </div>
+                </label>
+                {textContent && <p className="mt-3 text-xs text-gray-400">File descriptor loaded ({textContent.length} characters)</p>}
+              </div>
+            )}
+
+            {inputMethod === "url" && (
+              <div className="mt-4 space-y-3">
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-white focus:border-white focus:outline-none"
+                  placeholder="https://example.com/content"
+                />
+                <button
+                  onClick={handleFetchFromUrl}
+                  disabled={!url}
+                  className="w-full rounded border border-white px-4 py-3 text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+                >
+                  {isFetchingUrl ? "Fetching..." : "Fetch & Verify"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleComputeAndCheck}
+            disabled={!textContent || isProcessing}
+            className="w-full rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
+          >
+            {isProcessing ? "Processing..." : "Compute & Check"}
+          </button>
+
+          <div className="rounded-3xl border border-white p-5">
+            <h2 className="text-lg font-bold">Verification Result</h2>
+
+            {!result && !error && (
+              <div className="mt-4 rounded border border-gray-700 p-4 text-sm text-gray-400">
+                Choose an input method, load your content, then run verification.
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 rounded border border-white p-4 text-sm font-bold text-white">
+                ⚠ {error}
+              </div>
+            )}
+
+            {result && (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-bold">Computed Hash</label>
+                  <code className="block break-all rounded border border-gray-700 px-3 py-3 font-mono text-xs text-white">
+                    {result.hash}
+                  </code>
+                  <button
+                    onClick={() => copyToClipboard(result.hash)}
+                    className="mt-3 w-full rounded border border-white px-4 py-2 text-xs font-bold text-white hover:bg-white hover:text-black"
+                  >
+                    Copy Hash
+                  </button>
+                </div>
+
+                <div className="rounded border border-gray-700 p-4">
+                  <p className="text-sm font-bold text-white">On-chain Match</p>
+                  <p className="mt-2 text-xs text-gray-300">{result.matched ? "Matched existing publication records." : "This content hash was not found in the registry."}</p>
+                </div>
+
+                {result.matched && result.matches && result.matches.length > 0 && (
+                  <div className="space-y-3">
+                    {result.matches.map((match, idx) => (
+                      <div key={idx} className="rounded border border-gray-700 p-4 text-xs">
+                        {match.title && <p className="mb-2 font-bold text-white">{match.title}</p>}
+                        <p className="text-gray-400">Publisher</p>
+                        <code className="block break-all text-white">{match.publisher}</code>
+                        <p className="mt-2 text-gray-400">Timestamp</p>
+                        <p className="text-white">{new Date(match.timestamp).toLocaleString()}</p>
+                        <p className="mt-2 text-gray-400">Transaction Hash</p>
+                        <code className="block break-all text-white">{match.txHash}</code>
+                        {match.parentHash && (
+                          <>
+                            <p className="mt-2 text-gray-400">Parent Hash</p>
+                            <code className="block break-all text-white">{match.parentHash}</code>
+                          </>
+                        )}
+                        <Link href={`/publication/${match.publicationId}`} className="mt-3 inline-block font-bold text-white hover:underline">
+                          View Full Details →
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-black text-white">
