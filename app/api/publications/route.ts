@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { addPublication, getNextVersion, getPublications, getPublicationsByHash, getPublicationsByWallet, synchronizePendingPublications } from '@/lib/db';
+import { getAccountByWallet } from '@/lib/accounts-db';
 import {
   canonicalizeContent,
   computeContentHash,
@@ -167,6 +168,14 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPublisherWallet = publisherWallet.trim().toLowerCase();
+    const publisherAccount = getAccountByWallet(normalizedPublisherWallet);
+
+    if (!publisherAccount) {
+      return NextResponse.json(
+        { error: 'Create and save your account profile before publishing' },
+        { status: 403 }
+      );
+    }
 
     if (normalizedParentHash) {
       const parentPublication = getPublicationsByHash(normalizedParentHash).find(

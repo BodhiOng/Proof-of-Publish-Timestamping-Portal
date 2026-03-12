@@ -9,6 +9,7 @@ import { useWallet } from "@/hooks/useWallet";
 import {
   canonicalizePublicationContent,
   createPublication,
+  getAccountProfile,
   getPublications,
   verifyPublicationContent,
   scrapePublicationSource,
@@ -214,6 +215,8 @@ export default function PublishPage() {
   const [blockTimestamp, setBlockTimestamp] = useState("");
   const [publicationId, setPublicationId] = useState("");
   const [error, setError] = useState("");
+  const [hasAccount, setHasAccount] = useState<boolean | null>(null);
+  const [isCheckingAccount, setIsCheckingAccount] = useState(false);
 
   const supportsFileUpload = contentType === "code" || contentType === "document" || contentType === "image" || contentType === "audio" || contentType === "video";
   const isCodeType = contentType === "code";
@@ -250,6 +253,42 @@ export default function PublishPage() {
     ? `Max file size: ${formatFileSize(MAX_EMBED_FILE_SIZE_BY_TYPE[contentType] as number)}`
     : "";
   const parentHashFromQuery = (searchParams.get("parent") || "").trim();
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAccountStatus = async () => {
+      if (!address) {
+        if (isMounted) {
+          setHasAccount(null);
+          setIsCheckingAccount(false);
+        }
+        return;
+      }
+
+      setIsCheckingAccount(true);
+      try {
+        const data = await getAccountProfile(address);
+        if (isMounted) {
+          setHasAccount(Boolean(data.account));
+        }
+      } catch {
+        if (isMounted) {
+          setHasAccount(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingAccount(false);
+        }
+      }
+    };
+
+    void loadAccountStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [address]);
 
   useEffect(() => {
     let isMounted = true;
@@ -435,6 +474,11 @@ export default function PublishPage() {
   const handlePreview = async () => {
     setError("");
 
+    if (hasAccount === false) {
+      setError("Create and save your account profile before publishing.");
+      return;
+    }
+
     if (!isCodeInputValid) {
       setError("For code type, upload a code file first");
       return;
@@ -464,6 +508,11 @@ export default function PublishPage() {
 
   const handleSignAndRegister = async () => {
     setError("");
+
+    if (hasAccount === false) {
+      setError("Create and save your account profile before publishing.");
+      return;
+    }
 
     if (!isCodeInputValid) {
       setError("For code type, upload a code file first");
@@ -517,6 +566,10 @@ export default function PublishPage() {
     try {
       if (!address) {
         throw new Error("Wallet is not connected");
+      }
+
+      if (hasAccount !== true) {
+        throw new Error("Create and save your account profile before publishing.");
       }
 
       const data = await createPublication({
@@ -727,13 +780,14 @@ export default function PublishPage() {
 
   const isUploadComplete = !isUploadingFile && uploadProgress === 100;
   const showPublishingOverlay = isSigning || publicationStatus === "PENDING";
+  const isAccountCheckLoading = isConnected && hasAccount === null && isCheckingAccount;
   const canonicalizedContentSizeBytes = new TextEncoder().encode(canonicalizedContent).length;
   const canonicalizedPreviewLimitBytes = MAX_CANONICALIZED_PREVIEW_BYTES_BY_TYPE[contentType]
     ?? DEFAULT_MAX_CANONICALIZED_PREVIEW_BYTES;
   const isCanonicalizedPreviewTooLarge = canonicalizedContentSizeBytes > canonicalizedPreviewLimitBytes;
 
   // Loading state
-  if (isLoading) {
+  if (isLoading || isAccountCheckLoading) {
     if (isMobile) {
       return (
         <main className="min-h-screen bg-black text-white">
@@ -847,6 +901,93 @@ export default function PublishPage() {
                   <li>• Prove authorship and timestamp of publications</li>
                   <li>• Maintain full custody of your cryptographic identity</li>
                   <li>• No content is uploaded - only hashes are stored</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Connected but account not created yet
+  if (hasAccount === false) {
+    if (isMobile) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+            <div className="space-y-3 border-b border-white pb-5">
+              <Link href="/" className="text-sm text-gray-400 hover:text-white">
+                ← Back to Home
+              </Link>
+              <h1 className="text-3xl font-bold">Publish Content</h1>
+              <p className="text-sm text-gray-400">Create a new proof-of-publish on-chain record</p>
+            </div>
+
+            <div className="rounded-3xl border border-white p-6 text-center">
+              <h2 className="text-2xl font-bold">Account Setup Required</h2>
+              <p className="mt-3 text-sm text-gray-400">
+                Your wallet is connected, but you need to create an account profile before publishing.
+              </p>
+              <Link href="/connect-wallet" className="mt-5 inline-flex rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200">
+                Create Account Profile
+              </Link>
+            </div>
+
+            <div className="rounded-3xl border border-gray-700 p-5">
+              <h3 className="text-sm font-bold">Why is account setup required?</h3>
+              <ul className="mt-3 space-y-2 text-xs text-gray-400">
+                <li>• Links publications to your public profile</li>
+                <li>• Prevents anonymous wallet-only publishing</li>
+                <li>• Keeps attribution consistent across dashboard and verify pages</li>
+              </ul>
+            </div>
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-7xl px-6 py-12 lg:px-12">
+          <div className="mb-8 border-b border-white pb-6">
+            <Link href="/" className="text-sm text-gray-400 hover:text-white">
+              ← Back to Home
+            </Link>
+            <h1 className="mt-2 text-3xl font-bold">Publish Content</h1>
+            <p className="mt-1 text-sm text-gray-400">
+              Create a new proof-of-publish on-chain record
+            </p>
+          </div>
+
+          <div className="mx-auto max-w-2xl">
+            <div className="rounded-lg border border-white bg-black p-12 text-center">
+              <div className="mb-6">
+                <div className="mx-auto mb-4 h-16 w-16 rounded-full border-2 border-white bg-black p-4">
+                  <svg className="h-full w-full text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h2 className="mb-3 text-2xl font-bold">Account Setup Required</h2>
+                <p className="mb-6 text-gray-400">
+                  Your wallet is connected, but no account profile exists yet.
+                  Create your account first to publish content.
+                </p>
+              </div>
+
+              <Link
+                href="/connect-wallet"
+                className="inline-block rounded-full bg-white px-8 py-3 font-bold text-black hover:bg-gray-200"
+              >
+                Create Account Profile
+              </Link>
+
+              <div className="mt-6 rounded-lg border border-gray-700 bg-black p-4 text-left">
+                <h3 className="mb-2 text-sm font-bold">Why is account setup required?</h3>
+                <ul className="space-y-1 text-xs text-gray-400">
+                  <li>• Links publications to your public profile</li>
+                  <li>• Prevents anonymous wallet-only publishing</li>
+                  <li>• Keeps attribution consistent across dashboard and verify pages</li>
                 </ul>
               </div>
             </div>
@@ -1021,17 +1162,17 @@ export default function PublishPage() {
           <div className="grid gap-2">
             <button
               onClick={handlePreview}
-              disabled={!title || (!isCodeType && !isContentOptional && !content) || (isCodeType && !isCodeInputValid) || isSigning || publicationStatus === "PENDING"}
+              disabled={!title || (!isCodeType && !isContentOptional && !content) || (isCodeType && !isCodeInputValid) || isSigning || isCheckingAccount || hasAccount !== true || publicationStatus === "PENDING"}
               className="rounded-full border border-white px-6 py-3 font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
             >
               Preview Canonicalized
             </button>
             <button
               onClick={handleSignAndRegister}
-              disabled={!computedHash || isSigning || isValidatingParentHash || Boolean(duplicatePublicationId) || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
+              disabled={!computedHash || isSigning || isValidatingParentHash || isCheckingAccount || hasAccount !== true || Boolean(duplicatePublicationId) || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
               className="rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
             >
-              {isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
+              {isCheckingAccount ? "Checking Account..." : isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
             </button>
           </div>
 
@@ -1382,17 +1523,17 @@ export default function PublishPage() {
             <div className="flex gap-3">
               <button
                 onClick={handlePreview}
-                disabled={!title || (!isCodeType && !isContentOptional && !content) || (isCodeType && !isCodeInputValid) || isSigning || publicationStatus === "PENDING"}
+                disabled={!title || (!isCodeType && !isContentOptional && !content) || (isCodeType && !isCodeInputValid) || isSigning || isCheckingAccount || hasAccount !== true || publicationStatus === "PENDING"}
                 className="flex-1 rounded-full border border-white bg-black px-6 py-3 font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700 disabled:hover:bg-black"
               >
                 Preview Canonicalized
               </button>
               <button
                 onClick={handleSignAndRegister}
-                disabled={!computedHash || isSigning || isValidatingParentHash || Boolean(duplicatePublicationId) || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
+                disabled={!computedHash || isSigning || isValidatingParentHash || isCheckingAccount || hasAccount !== true || Boolean(duplicatePublicationId) || publicationStatus === "PENDING" || publicationStatus === "CONFIRMED"}
                 className="flex-1 rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
               >
-                {isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
+                {isCheckingAccount ? "Checking Account..." : isValidatingParentHash ? "Validating Parent..." : "Sign & Register"}
               </button>
             </div>
           </div>
