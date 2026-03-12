@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
-import { getAccountProfile, getPublicationById, type AccountProfile } from "@/lib/api-client";
+import { deletePublication, getAccountProfile, getPublicationById, type AccountProfile } from "@/lib/api-client";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useWallet } from "@/hooks/useWallet";
 
 type Publication = {
   id: string;
@@ -77,6 +79,8 @@ export default function PublicationDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const router = useRouter();
+  const { isConnected, address } = useWallet();
   const { id } = use(params);
   const isMobile = useIsMobile();
   const [publication, setPublication] = useState<Publication | null>(null);
@@ -85,6 +89,8 @@ export default function PublicationDetailPage({
   const [newChildVersionId, setNewChildVersionId] = useState<string | null>(null);
   const [publisherProfile, setPublisherProfile] = useState<AccountProfile | null>(null);
   const [isLoadingPublisherProfile, setIsLoadingPublisherProfile] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -328,6 +334,12 @@ export default function PublicationDetailPage({
   };
 
   const parsedFile = parseFileDescriptor(publication.canonicalizedContent);
+  const canDelete = Boolean(
+    isConnected
+    && address
+    && publication.publisherWallet
+    && address.trim().toLowerCase() === publication.publisherWallet.trim().toLowerCase()
+  );
   const hasFileDescriptor = Boolean(parsedFile.fileName && parsedFile.mimeType);
   const isDocumentPublication = publication.contentType === "document";
   const isCodePublication = publication.contentType === "code";
@@ -349,6 +361,31 @@ export default function PublicationDetailPage({
     .replace(/\n?DATAURL:data:[^\n]+/g, "")
     .trim();
   const useScrollableCanonicalizedWindow = publication.contentType === "text" || publication.contentType === "article";
+
+  const handleDeletePublication = async () => {
+    if (!canDelete || !address || isDeleting) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      "Delete this publication? This action cannot be undone."
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await deletePublication(publication.id, address);
+      router.push("/dashboard");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete publication");
+      setIsDeleting(false);
+    }
+  };
 
   if (isMobile) {
     return (
@@ -588,7 +625,20 @@ export default function PublicationDetailPage({
               <Link href="/verify" className="rounded border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
                 Verify Content
               </Link>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={handleDeletePublication}
+                  disabled={isDeleting}
+                  className="rounded border border-white px-4 py-3 text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+                >
+                  {isDeleting ? "Deleting..." : "Delete Publication"}
+                </button>
+              )}
             </div>
+            {deleteError && (
+              <p className="mt-3 text-xs font-bold text-white">⚠ {deleteError}</p>
+            )}
           </section>
         </div>
       </main>
@@ -971,7 +1021,18 @@ export default function PublicationDetailPage({
                 >
                   Verify Content
                 </Link>
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={handleDeletePublication}
+                    disabled={isDeleting}
+                    className="block w-full rounded border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black disabled:border-gray-700 disabled:text-gray-700"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete Publication"}
+                  </button>
+                )}
               </div>
+              {deleteError && <p className="mt-3 text-xs font-bold text-white">⚠ {deleteError}</p>}
             </div>
 
             {/* Quick Info */}
