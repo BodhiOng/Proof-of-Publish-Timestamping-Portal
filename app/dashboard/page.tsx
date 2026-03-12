@@ -9,6 +9,7 @@ import { deletePublication, getPublications as fetchPublications } from "@/lib/a
 const DEFAULT_PAGE_SIZE = 10;
 type DashboardSort = "newest" | "oldest" | "title_asc" | "title_desc" | "type_asc";
 type DashboardViewMode = "all" | "mine";
+type DashboardContentTypeFilter = "all" | "text" | "article" | "code" | "document" | "image" | "audio" | "video";
 
 type PublicationStatus = "PENDING" | "CONFIRMED" | "FAILED";
 type Publication = {
@@ -38,6 +39,7 @@ export default function DashboardPage() {
   const [fetchError, setFetchError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
+  const [contentTypeFilter, setContentTypeFilter] = useState<DashboardContentTypeFilter>("all");
   const [sortBy, setSortBy] = useState<DashboardSort>("newest");
   const [viewMode, setViewMode] = useState<DashboardViewMode>("all");
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -70,7 +72,7 @@ export default function DashboardPage() {
     // Cache is only valid for the current view + wallet + search + sort + page size context.
     pageCacheRef.current = {};
     paginationCacheRef.current = null;
-  }, [viewMode, address, appliedSearchTerm, sortBy, pageSize]);
+  }, [viewMode, address, appliedSearchTerm, contentTypeFilter, sortBy, pageSize]);
 
   useEffect(() => {
     if (!isConnected) {
@@ -111,6 +113,7 @@ export default function DashboardPage() {
       const data = await fetchPublications({
         wallet: viewMode === "mine" ? address || undefined : undefined,
         search: appliedSearchTerm || undefined,
+        contentType: contentTypeFilter === "all" ? undefined : contentTypeFilter,
         sortBy,
         page: currentPage,
         limit: pageSize,
@@ -141,6 +144,7 @@ export default function DashboardPage() {
         void fetchPublications({
           wallet: viewMode === "mine" ? address || undefined : undefined,
           search: appliedSearchTerm || undefined,
+          contentType: contentTypeFilter === "all" ? undefined : contentTypeFilter,
           sortBy,
           page: nextPage,
           limit: pageSize,
@@ -160,7 +164,7 @@ export default function DashboardPage() {
     } finally {
       setIsFetching(false);
     }
-  }, [viewMode, address, currentPage, pageSize, appliedSearchTerm, sortBy]);
+  }, [viewMode, address, currentPage, pageSize, appliedSearchTerm, contentTypeFilter, sortBy]);
 
   useEffect(() => {
     loadPublications(false);
@@ -322,6 +326,7 @@ export default function DashboardPage() {
         const data = await fetchPublications({
           wallet: address,
           search: appliedSearchTerm || undefined,
+          contentType: contentTypeFilter === "all" ? undefined : contentTypeFilter,
           sortBy,
           page,
           limit: pageLimit,
@@ -548,6 +553,28 @@ export default function DashboardPage() {
                   <option value="title_asc">Title A-Z</option>
                   <option value="title_desc">Title Z-A</option>
                   <option value="type_asc">Type A-Z</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="contentType-mobile" className="mb-1 block text-xs text-gray-400">Type</label>
+                <select
+                  id="contentType-mobile"
+                  value={contentTypeFilter}
+                  onChange={(e) => {
+                    setContentTypeFilter(e.target.value as DashboardContentTypeFilter);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full rounded border border-gray-700 bg-black px-3 py-3 text-sm text-white focus:border-white focus:outline-none"
+                >
+                  <option value="all">All Types</option>
+                  <option value="text">Text</option>
+                  <option value="article">Article</option>
+                  <option value="code">Code</option>
+                  <option value="document">Document</option>
+                  <option value="image">Image</option>
+                  <option value="audio">Audio</option>
+                  <option value="video">Video</option>
                 </select>
               </div>
 
@@ -887,6 +914,28 @@ export default function DashboardPage() {
                     <option value="title_asc">Title A-Z</option>
                     <option value="title_desc">Title Z-A</option>
                     <option value="type_asc">Type A-Z</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">Type</span>
+                  <select
+                    id="contentType"
+                    value={contentTypeFilter}
+                    onChange={(e) => {
+                      setContentTypeFilter(e.target.value as DashboardContentTypeFilter);
+                      setCurrentPage(1);
+                    }}
+                    className="min-w-[170px] rounded border border-gray-700 bg-black px-3 py-1.5 text-xs font-semibold text-white focus:border-white focus:outline-none"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="text">Text</option>
+                    <option value="article">Article</option>
+                    <option value="code">Code</option>
+                    <option value="document">Document</option>
+                    <option value="image">Image</option>
+                    <option value="audio">Audio</option>
+                    <option value="video">Video</option>
                   </select>
                 </div>
 

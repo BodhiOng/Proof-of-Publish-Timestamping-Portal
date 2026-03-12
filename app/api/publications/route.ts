@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
     const wallet = searchParams.get('wallet');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const contentType = searchParams.get('contentType')?.trim().toLowerCase();
     const sortBy = parseSort(searchParams.get('sortBy'));
     const page = parsePositiveInt(searchParams.get('page'), DEFAULT_PAGE);
     const requestedLimit = parsePositiveInt(searchParams.get('limit'), DEFAULT_LIMIT);
@@ -52,6 +53,10 @@ export async function GET(request: NextRequest) {
     // Filter by status if provided
     if (status && status !== 'ALL') {
       publications = publications.filter(p => p.status === status);
+    }
+
+    if (contentType && contentType !== 'all') {
+      publications = publications.filter((publication) => publication.contentType.toLowerCase() === contentType);
     }
 
     // Search filter

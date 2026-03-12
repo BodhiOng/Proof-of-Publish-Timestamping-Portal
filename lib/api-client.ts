@@ -140,6 +140,7 @@ export async function getPublications(query?: {
   wallet?: string;
   status?: PublicationStatus | 'ALL';
   search?: string;
+  contentType?: string;
   sortBy?: 'newest' | 'oldest' | 'title_asc' | 'title_desc' | 'type_asc';
   page?: number;
   limit?: number;
@@ -149,6 +150,7 @@ export async function getPublications(query?: {
   if (query?.wallet) params.set('wallet', query.wallet);
   if (query?.status) params.set('status', query.status);
   if (query?.search) params.set('search', query.search);
+  if (query?.contentType) params.set('contentType', query.contentType);
   if (query?.sortBy) params.set('sortBy', query.sortBy);
   if (query?.page) params.set('page', String(query.page));
   if (query?.limit) params.set('limit', String(query.limit));
