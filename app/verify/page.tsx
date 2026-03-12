@@ -76,7 +76,9 @@ export default function VerifyPage() {
   const [textContent, setTextContent] = useState("");
   const [url, setUrl] = useState("");
   const [fileName, setFileName] = useState("");
-  
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [fileProgress, setFileProgress] = useState(0);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
@@ -91,11 +93,16 @@ export default function VerifyPage() {
     setFileName(file.name);
     setError("");
     setResult(null);
+    setIsLoadingFile(true);
+    setFileProgress(0);
 
     try {
       const resolvedMimeType = resolveMimeType(file);
       const bytes = await file.arrayBuffer();
+      setFileProgress(30);
+
       const hashHex = await computeSha256Hex(new Uint8Array(bytes));
+      setFileProgress(60);
 
       const previewDataUrlRaw = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -103,6 +110,7 @@ export default function VerifyPage() {
         reader.onload = () => resolve(reader.result as string);
         reader.readAsDataURL(file);
       });
+      setFileProgress(90);
 
       const previewDataUrl = previewDataUrlRaw.startsWith("data:application/octet-stream")
         && resolvedMimeType !== "application/octet-stream"
@@ -119,8 +127,11 @@ export default function VerifyPage() {
       ].join("\n");
 
       setTextContent(fileDescriptorPayload);
+      setFileProgress(100);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to process uploaded file");
+    } finally {
+      setIsLoadingFile(false);
     }
   };
 
@@ -254,14 +265,26 @@ export default function VerifyPage() {
                   onChange={handleFileUpload}
                   accept=".js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sol,.json,.xml,.html,.css,.scss,.sh,.bat,.ps1,.md,.pdf,.doc,.docx,.txt,.rtf,.odt,image/*,audio/*,video/*"
                   className="hidden"
+                  disabled={isLoadingFile}
                 />
-                <label htmlFor="file-upload-mobile" className="flex cursor-pointer items-center justify-center rounded border border-gray-700 px-4 py-8 text-center hover:border-white">
+                <label htmlFor="file-upload-mobile" className={`flex cursor-pointer items-center justify-center rounded border px-4 py-8 text-center ${isLoadingFile ? "border-gray-700 cursor-not-allowed" : "border-gray-700 hover:border-white"}`}>
                   <div>
                     <p className="font-bold text-white">Click to upload</p>
                     <p className="mt-1 text-xs text-gray-400">{fileName || "Supports code, document, image, audio, and video files"}</p>
                   </div>
                 </label>
-                {textContent && <p className="mt-3 text-xs text-gray-400">File descriptor loaded ({textContent.length} characters)</p>}
+                {isLoadingFile && (
+                  <div className="mt-3 space-y-1">
+                    <div className="flex items-center justify-between text-xs text-gray-400">
+                      <span>Processing file...</span>
+                      <span>{fileProgress}%</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-gray-800">
+                      <div className="h-1.5 rounded-full bg-white transition-all duration-300" style={{ width: `${fileProgress}%` }} />
+                    </div>
+                  </div>
+                )}
+                {!isLoadingFile && textContent && <p className="mt-3 text-xs text-gray-400">File descriptor loaded ({textContent.length} characters)</p>}
               </div>
             )}
 
@@ -287,10 +310,10 @@ export default function VerifyPage() {
 
           <button
             onClick={handleComputeAndCheck}
-            disabled={!textContent || isProcessing}
+            disabled={!textContent || isProcessing || isLoadingFile}
             className="w-full rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
           >
-            {isProcessing ? "Processing..." : "Compute & Check"}
+            {isProcessing ? "Processing..." : isLoadingFile ? "Waiting for file..." : "Compute & Check"}
           </button>
 
           <div className="rounded-3xl border border-white p-5">
@@ -454,10 +477,11 @@ export default function VerifyPage() {
                     onChange={handleFileUpload}
                     accept=".js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sol,.json,.xml,.html,.css,.scss,.sh,.bat,.ps1,.md,.pdf,.doc,.docx,.txt,.rtf,.odt,image/*,audio/*,video/*"
                     className="hidden"
+                    disabled={isLoadingFile}
                   />
                   <label
                     htmlFor="file-upload"
-                    className="flex cursor-pointer items-center justify-center rounded border border-gray-700 bg-black px-4 py-8 text-center hover:border-white"
+                    className={`flex cursor-pointer items-center justify-center rounded border bg-black px-4 py-8 text-center ${isLoadingFile ? "border-gray-700 cursor-not-allowed" : "border-gray-700 hover:border-white"}`}
                   >
                     <div>
                       <p className="font-bold text-white">Click to upload</p>
@@ -466,7 +490,18 @@ export default function VerifyPage() {
                       </p>
                     </div>
                   </label>
-                  {textContent && (
+                  {isLoadingFile && (
+                    <div className="mt-3 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>Processing file...</span>
+                        <span>{fileProgress}%</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-gray-800">
+                        <div className="h-1.5 rounded-full bg-white transition-all duration-300" style={{ width: `${fileProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
+                  {!isLoadingFile && textContent && (
                     <div className="mt-4 rounded border border-gray-700 bg-black p-3">
                       <p className="text-xs text-gray-400">File descriptor loaded ({textContent.length} characters)</p>
                     </div>
@@ -505,10 +540,10 @@ export default function VerifyPage() {
             {/* Action Button */}
             <button
               onClick={handleComputeAndCheck}
-              disabled={!textContent || isProcessing}
+              disabled={!textContent || isProcessing || isLoadingFile}
               className="w-full rounded-full bg-white px-6 py-3 font-bold text-black hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-600"
             >
-              {isProcessing ? "Processing..." : "Compute & Check"}
+              {isProcessing ? "Processing..." : isLoadingFile ? "Waiting for file..." : "Compute & Check"}
             </button>
 
             {/* What does hash match mean */}

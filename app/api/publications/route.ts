@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addPublication, getPublications, getPublicationsByHash, getPublicationsByWallet, synchronizePendingPublications } from '@/lib/db';
+import { addPublication, getNextVersion, getPublications, getPublicationsByHash, getPublicationsByWallet, synchronizePendingPublications } from '@/lib/db';
 import {
   canonicalizeContent,
   computeContentHash,
@@ -181,6 +181,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: 'Only the original publisher can create a child version from this parent hash' },
           { status: 403 }
+        );
+      }
+
+      const existingChild = getNextVersion(normalizedParentHash);
+      if (existingChild) {
+        return NextResponse.json(
+          { error: 'This parent hash already has a child version' },
+          { status: 409 }
         );
       }
     }

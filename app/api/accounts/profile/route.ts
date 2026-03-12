@@ -50,11 +50,7 @@ function validateProfileInput(payload: Record<string, unknown>) {
 
   const isDataAvatar = /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(avatarUrl);
 
-  if (!avatarUrl) {
-    return { error: "Profile picture upload is required" };
-  }
-
-  if (!isDataAvatar) {
+  if (avatarUrl && !isDataAvatar) {
     return { error: "Profile picture must be uploaded as an image file" };
   }
 

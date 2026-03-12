@@ -195,6 +195,7 @@ export default function PublishPage() {
   const [parentHash, setParentHash] = useState("");
   const [availableParentHashes, setAvailableParentHashes] = useState<string[]>([]);
   const [parentHashTypeLookup, setParentHashTypeLookup] = useState<Record<string, string>>({});
+  const [parentHashHasChildLookup, setParentHashHasChildLookup] = useState<Record<string, boolean>>({});
   const [isValidatingParentHash, setIsValidatingParentHash] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [isUploadingFile, setIsUploadingFile] = useState(false);
@@ -266,6 +267,7 @@ export default function PublishPage() {
         }
 
         const nextLookup: Record<string, string> = {};
+        const nextHasChildLookup: Record<string, boolean> = {};
         const uniqueHashes = Array.from(
           new Set(
             (data.publications || [])
@@ -273,6 +275,9 @@ export default function PublishPage() {
                 const normalizedHash = publication.contentHash?.toLowerCase();
                 if (!normalizedHash) return null;
                 nextLookup[normalizedHash] = publication.contentType;
+                if (publication.parentHash) {
+                  nextHasChildLookup[publication.parentHash.toLowerCase()] = true;
+                }
                 return publication.contentHash;
               })
               .filter((hash): hash is string => Boolean(hash))
@@ -281,10 +286,12 @@ export default function PublishPage() {
 
         setAvailableParentHashes(uniqueHashes);
         setParentHashTypeLookup(nextLookup);
+        setParentHashHasChildLookup(nextHasChildLookup);
       } catch {
         if (isMounted) {
           setAvailableParentHashes([]);
           setParentHashTypeLookup({});
+          setParentHashHasChildLookup({});
         }
       }
     };
@@ -337,6 +344,34 @@ export default function PublishPage() {
     }));
 
     return exactMatch.contentType;
+  };
+
+  const resolveParentHashHasChild = async (hashValue: string): Promise<boolean> => {
+    const normalizedHash = normalizeHash(hashValue);
+    if (!normalizedHash) {
+      return false;
+    }
+
+    if (normalizedHash in parentHashHasChildLookup) {
+      return Boolean(parentHashHasChildLookup[normalizedHash]);
+    }
+
+    if (!address) {
+      return false;
+    }
+
+    const data = await getPublications({ wallet: address, limit: 100 });
+    const nextHasChildLookup: Record<string, boolean> = {};
+
+    for (const publication of data.publications || []) {
+      if (publication.parentHash) {
+        nextHasChildLookup[publication.parentHash.toLowerCase()] = true;
+      }
+    }
+
+    setParentHashHasChildLookup((current) => ({ ...current, ...nextHasChildLookup }));
+
+    return Boolean(nextHasChildLookup[normalizedHash]);
   };
 
   useEffect(() => {
@@ -453,8 +488,14 @@ export default function PublishPage() {
           setError(`Parent hash type is \"${parentType}\" but current content type is \"${contentType}\". Change content type to match before signing.`);
           return;
         }
+
+        const parentAlreadyHasChild = await resolveParentHashHasChild(parentHash);
+        if (parentAlreadyHasChild) {
+          setError("Parent hash already has a child version. Choose another parent hash or clear the parent field.");
+          return;
+        }
       } catch {
-        setError("Failed to validate parent hash type. Please try again.");
+        setError("Failed to validate parent hash. Please try again.");
         return;
       } finally {
         setIsValidatingParentHash(false);
@@ -1047,6 +1088,10 @@ export default function PublishPage() {
                   <Link href="/dashboard" className="rounded-full border border-white px-4 py-3 text-center text-sm font-bold text-white hover:bg-white hover:text-black">
                     Go to Dashboard
                   </Link>
+                  <p className="pt-1 text-center text-xs text-gray-400">Done? Remember to clear the form before publishing new content.</p>
+                  <button onClick={handleClearPublicationDetails} className="rounded-full border border-gray-600 px-4 py-3 text-sm font-bold text-gray-400 hover:border-white hover:text-white">
+                    Clear &amp; Publish Another
+                  </button>
                 </div>
               )}
             </div>
@@ -1070,8 +1115,8 @@ export default function PublishPage() {
         </div>
 
         {showConfirmModal && (
-          <div className="fixed inset-0 z-50 flex items-end bg-black/80">
-            <div className="w-full rounded-t-[2rem] border border-white bg-black p-5">
+          <div className="fixed inset-0 z-50 flex items-end overflow-y-auto bg-black/80">
+            <div className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-[2rem] border border-white bg-black p-5">
               <h2 className="text-xl font-bold">Confirm Publication</h2>
               <div className="mt-4 space-y-3 text-sm">
                 <div>
@@ -1446,19 +1491,25 @@ export default function PublishPage() {
                 )}
 
                 {publicationStatus === "CONFIRMED" && (
-                  <div className="mt-4 flex gap-2">
-                    <Link
-                      href={`/publication/${publicationId}`}
-                      className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
-                    >
-                      View Details
-                    </Link>
-                    <Link
-                      href="/dashboard"
-                      className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
-                    >
-                      Go to Dashboard
-                    </Link>
+                  <div className="mt-4 grid gap-2">
+                    <div className="flex gap-2">
+                      <Link
+                        href={`/publication/${publicationId}`}
+                        className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
+                      >
+                        View Details
+                      </Link>
+                      <Link
+                        href="/dashboard"
+                        className="flex-1 rounded-full border border-white bg-black px-4 py-2 text-center text-sm font-bold text-white hover:bg-white hover:text-black"
+                      >
+                        Go to Dashboard
+                      </Link>
+                    </div>
+                    <p className="text-center text-xs text-gray-400">Done? Remember to clear the form before publishing new content.</p>
+                    <button onClick={handleClearPublicationDetails} className="rounded-full border border-gray-600 bg-black px-4 py-2 text-sm font-bold text-gray-400 hover:border-white hover:text-white">
+                      Clear &amp; Publish Another
+                    </button>
                   </div>
                 )}
               </div>
@@ -1488,8 +1539,8 @@ export default function PublishPage() {
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-          <div className="mx-4 w-full max-w-2xl rounded-lg border border-white bg-black p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border border-white bg-black p-6">
             <h2 className="mb-4 text-2xl font-bold">Confirm Publication</h2>
             
             <div className="mb-6 space-y-4">

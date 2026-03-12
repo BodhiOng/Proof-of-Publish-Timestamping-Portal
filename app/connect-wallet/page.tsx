@@ -66,9 +66,8 @@ export default function ConnectWalletPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const canSaveProfile = useMemo(() => {
-    const hasUploadedAvatar = /^data:image\//i.test(draft.avatarUrl);
-    return !!connectedWallet && draft.username.trim().length >= 3 && hasUploadedAvatar && !isSavingProfile;
-  }, [connectedWallet, draft.username, draft.avatarUrl, isSavingProfile]);
+    return !!connectedWallet && draft.username.trim().length >= 3 && !isSavingProfile;
+  }, [connectedWallet, draft.username, isSavingProfile]);
 
   useEffect(() => {
     checkIfWalletIsConnected();
@@ -315,11 +314,6 @@ export default function ConnectWalletPage() {
   const handleSaveProfile = async () => {
     if (!connectedWallet) return;
 
-    if (!/^data:image\//i.test(draft.avatarUrl)) {
-      setError("Profile picture upload is required.");
-      return;
-    }
-
     setIsSavingProfile(true);
     setError("");
     setSuccess("");
@@ -343,12 +337,12 @@ export default function ConnectWalletPage() {
         const created = await createAccountProfile(payload);
         setProfile(created.account);
         setDraft(mapProfileToDraft(created.account));
-        setSuccess("Account created and linked to your connected wallet.");
+        setSuccess("Account created and linked to your connected wallet. You can close the MetaMask popup now.");
       } else {
         const updated = await updateAccountProfile(payload);
         setProfile(updated.account);
         setDraft(mapProfileToDraft(updated.account));
-        setSuccess("Profile updated successfully.");
+        setSuccess("Profile updated successfully. You can close the MetaMask popup now.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save profile");
@@ -859,7 +853,7 @@ export default function ConnectWalletPage() {
                             </button>
                           )}
                         </div>
-                        <p className="mt-1 text-xs text-gray-500">Required. PNG/JPG/WebP/GIF, up to 2MB.</p>
+                        <p className="mt-1 text-xs text-gray-500">Optional. PNG/JPG/WebP/GIF, up to 2MB.</p>
                       </div>
 
                       <div>
