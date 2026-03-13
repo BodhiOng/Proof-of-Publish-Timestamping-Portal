@@ -20,16 +20,6 @@ export default function CanonicalizationDocsPage() {
             </p>
           </div>
 
-          <section className="rounded-3xl border border-gray-700 p-5">
-            <h2 className="text-xl font-bold">Current App Behavior</h2>
-            <ul className="mt-3 space-y-2 text-sm text-gray-300">
-              <li>• Dashboard is wallet-scoped for connected users.</li>
-              <li>• Pagination uses page, limit, and search query params.</li>
-              <li>• Publish requires previewing canonicalized content first.</li>
-              <li>• File-based modes generate descriptor headers and hash metadata.</li>
-            </ul>
-          </section>
-
           <section className="rounded-3xl border border-white p-5">
             <h2 className="text-xl font-bold">Why Canonicalization?</h2>
             <p className="mt-3 text-sm leading-6 text-gray-300">
