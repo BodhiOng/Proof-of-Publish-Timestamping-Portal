@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "A valid wallet address is required" }, { status: 400 });
     }
 
-    const account = getAccountByWallet(wallet);
+    const account = await getAccountByWallet(wallet);
     return NextResponse.json({ account });
   } catch (error) {
     console.error("Failed to load account profile:", error);
@@ -144,17 +144,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: signatureValidation.error }, { status: 401 });
     }
 
-    const existingByUsername = getAccountByUsername(validation.value.username);
+    const existingByUsername = await getAccountByUsername(validation.value.username);
     if (existingByUsername && normalizeWallet(existingByUsername.wallet) !== normalizeWallet(wallet)) {
       return NextResponse.json({ error: "Username is already taken" }, { status: 409 });
     }
 
-    const existing = getAccountByWallet(wallet);
+    const existing = await getAccountByWallet(wallet);
     if (existing) {
       return NextResponse.json({ account: existing, created: false });
     }
 
-    const created = createAccount({ wallet, ...validation.value });
+    const created = await createAccount({ wallet, ...validation.value });
     return NextResponse.json({ account: created, created: true });
   } catch (error) {
     console.error("Failed to create account profile:", error);
@@ -191,12 +191,12 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: signatureValidation.error }, { status: 401 });
     }
 
-    const existingByUsername = getAccountByUsername(validation.value.username);
+    const existingByUsername = await getAccountByUsername(validation.value.username);
     if (existingByUsername && normalizeWallet(existingByUsername.wallet) !== normalizeWallet(wallet)) {
       return NextResponse.json({ error: "Username is already taken" }, { status: 409 });
     }
 
-    const updated = updateAccountByWallet(wallet, validation.value);
+    const updated = await updateAccountByWallet(wallet, validation.value);
     if (!updated) {
       return NextResponse.json({ error: "Account not found. Create account first." }, { status: 404 });
     }

@@ -11,6 +11,7 @@ The app lets you:
 - Hash content (SHA-256) and verify it later.
 - Publish parent-child content versions for provenance.
 - Track publication status, transaction IDs, and timestamps.
+- Create and manage wallet-bound user profiles.
 
 Main client routes:
 
@@ -28,7 +29,7 @@ Main client routes:
 Recommended client-side setup:
 
 - Use a desktop browser with MetaMask installed.
-- Connect to the expected network for your environment.
+- Connect MetaMask to your local Hardhat network for local development.
 - Keep pop-up windows enabled for wallet signature/transaction prompts.
 
 Mobile note:
@@ -62,8 +63,8 @@ If account changes in MetaMask, the page updates automatically.
 
 ### 4.2 Network Handling
 
-- If you are on an unexpected network, the page may show a warning and offer network-switching support.
-- Use MetaMask network selector when prompted.
+- For local development, use Localhost 8545 (Chain ID 1337).
+- If a transaction popup shows Ethereum Mainnet, cancel and switch back to Localhost before retrying.
 
 ### 4.3 Profile Management
 
@@ -77,6 +78,10 @@ After connection, fill or update profile fields:
 - Location
 
 Then save profile. The client performs challenge/signature-based profile operations through backend APIs.
+
+Expected wallet interaction for profile save:
+
+- Signature request (message signing), not a value transfer.
 
 ## 5. Publishing Content
 
@@ -122,8 +127,9 @@ Before final publish:
 ### 5.5 Sign and Publish
 
 1. Confirm publish details in the UI.
-2. Approve wallet signature/transaction.
-3. Wait for status updates.
+2. Approve the contract transaction in MetaMask.
+3. The app submits `registerPublication` to the deployed `PublicationRegistry` contract.
+4. Wait for transaction confirmation and persisted record update.
 
 On success, capture these values:
 
@@ -131,6 +137,10 @@ On success, capture these values:
 - Content hash
 - Transaction hash
 - Block timestamp
+
+Expected wallet interaction for publish:
+
+- Transaction approval with gas fee on your currently selected network.
 
 ## 6. Verifying Content
 
@@ -177,7 +187,7 @@ Use:
 
 - Move between pages.
 - Change page size where available.
-- Expect faster transitions due to client page cache and next-page prefetch.
+- Expect faster transitions due to page cache and next-page prefetch.
 
 ### 7.3 Manage Your Publications
 
@@ -280,7 +290,8 @@ Use this page to verify that expected content transformations are happening befo
 
 ### Wrong Network
 
-- Switch chain in MetaMask or use in-app network switch action.
+- Switch chain in MetaMask to Localhost 8545 for local development.
+- Cancel any popup that attempts Mainnet transfer/interaction during local testing.
 
 ### Signature/Transaction Rejected
 
@@ -296,3 +307,9 @@ Use this page to verify that expected content transformations are happening befo
 
 - Refresh `/dashboard` or publication detail page.
 - Confirm backend and chain node availability.
+
+### Failed to load account or Failed to create account
+
+- Check `DATABASE_URL` in `.env.local`.
+- Confirm PostgreSQL is running and credentials are correct.
+- Restart the dev server after environment changes.

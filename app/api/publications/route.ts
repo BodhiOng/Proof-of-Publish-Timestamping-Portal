@@ -44,11 +44,11 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(requestedLimit, MAX_LIMIT);
     const sync = searchParams.get('sync') === 'true';
 
-    const syncResult = sync ? synchronizePendingPublications() : null;
+    const syncResult = sync ? await synchronizePendingPublications() : null;
 
     let publications = wallet 
-      ? getPublicationsByWallet(wallet)
-      : getPublications();
+      ? await getPublicationsByWallet(wallet)
+      : await getPublications();
 
     // Filter by status if provided
     if (status && status !== 'ALL') {
@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
       parentHash,
       publisherWallet,
       txHash,
+      blockTimestamp,
       status,
     } = body;
 
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existingPublications = getPublicationsByHash(computedHash);
+    const existingPublications = await getPublicationsByHash(computedHash);
     if (existingPublications.length > 0) {
       return NextResponse.json(
         {
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPublisherWallet = publisherWallet.trim().toLowerCase();
-    const publisherAccount = getAccountByWallet(normalizedPublisherWallet);
+    const publisherAccount = await getAccountByWallet(normalizedPublisherWallet);
 
     if (!publisherAccount) {
       return NextResponse.json(
@@ -183,7 +184,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (normalizedParentHash) {
-      const parentPublication = getPublicationsByHash(normalizedParentHash).find(
+      const parentCandidates = await getPublicationsByHash(normalizedParentHash);
+      const parentPublication = parentCandidates.find(
         (publication) => publication.contentHash.toLowerCase() === normalizedParentHash
       );
 
@@ -198,7 +200,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const existingChild = getNextVersion(normalizedParentHash);
+      const existingChild = await getNextVersion(normalizedParentHash);
       if (existingChild) {
         return NextResponse.json(
           { error: 'This parent hash already has a child version' },
@@ -212,6 +214,9 @@ export async function POST(request: NextRequest) {
       : 'PENDING';
 
     const now = new Date().toISOString();
+    const normalizedBlockTimestamp = typeof blockTimestamp === 'string' && blockTimestamp.trim()
+      ? new Date(blockTimestamp).toISOString()
+      : now;
     const publication = {
       id: generatePublicationId(),
       title: title.trim(),
@@ -222,12 +227,12 @@ export async function POST(request: NextRequest) {
       contentHash: computedHash,
       parentHash: normalizedParentHash,
       txHash: typeof txHash === 'string' && txHash.trim() ? txHash.trim() : generateMockTxHash(),
-      blockTimestamp: now,
+      blockTimestamp: normalizedBlockTimestamp,
       status: normalizedStatus,
       createdAt: now,
     } as const;
 
-    addPublication(publication);
+    await addPublication(publication);
 
     return NextResponse.json({ publication }, { status: 201 });
   } catch (error) {

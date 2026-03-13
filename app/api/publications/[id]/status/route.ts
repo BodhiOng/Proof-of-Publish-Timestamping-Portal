@@ -8,8 +8,8 @@ export async function GET(
   try {
     const { id } = await params;
 
-    synchronizePendingPublications();
-    const publication = getPublicationById(id);
+    await synchronizePendingPublications();
+    const publication = await getPublicationById(id);
 
     if (!publication) {
       return NextResponse.json(
@@ -40,7 +40,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const publication = getPublicationById(id);
+    const publication = await getPublicationById(id);
 
     if (!publication) {
       return NextResponse.json(
@@ -59,7 +59,7 @@ export async function PATCH(
       );
     }
 
-    const updated = updatePublicationStatus(id, nextStatus);
+    const updated = await updatePublicationStatus(id, nextStatus);
     if (!updated) {
       return NextResponse.json(
         { error: 'Failed to update status' },
@@ -67,7 +67,7 @@ export async function PATCH(
       );
     }
 
-    const updatedPublication = getPublicationById(id);
+    const updatedPublication = await getPublicationById(id);
     if (!updatedPublication) {
       return NextResponse.json(
         { error: 'Failed to fetch updated publication' },

@@ -16,3 +16,12 @@
 - Loads publisher profile data for display.
 - Supports copy helpers and content/proof downloads.
 - Includes publication deletion flow for authorized owners.
+
+## Detail Data Includes
+
+- Publication ID
+- Title and content type
+- Publisher wallet
+- Content hash and optional parent hash
+- Transaction hash and block timestamp
+- Current status (`PENDING`, `CONFIRMED`, `FAILED`)

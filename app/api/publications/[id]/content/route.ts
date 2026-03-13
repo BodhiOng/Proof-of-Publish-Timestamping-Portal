@@ -7,7 +7,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const publication = getPublicationById(id);
+    const publication = await getPublicationById(id);
 
     if (!publication) {
       return NextResponse.json(

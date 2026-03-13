@@ -15,3 +15,7 @@
 - Includes complete before/after examples and sample hash output.
 - Links to dev tools for practical testing.
 - Includes responsive mobile and desktop layouts.
+
+## Rule Source
+
+- Canonicalization behavior reflects the shared utility used by publish and verify APIs.

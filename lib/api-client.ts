@@ -128,6 +128,8 @@ export async function createPublication(payload: {
   sourceUrl?: string;
   parentHash?: string;
   publisherWallet: string;
+  txHash?: string;
+  blockTimestamp?: string;
   status?: PublicationStatus;
 }): Promise<{ publication: Publication }> {
   return requestJson('/api/publications', {

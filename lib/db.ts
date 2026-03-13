@@ -1,8 +1,4 @@
-// Simple JSON-based database for publications
-import fs from 'fs';
-import path from 'path';
-
-const DB_PATH = path.join(process.cwd(), 'data', 'publications.json');
+import { query } from "@/lib/postgres";
 
 export type Publication = {
   id: string;
@@ -15,7 +11,7 @@ export type Publication = {
   parentHash?: string;
   txHash: string;
   blockTimestamp: string;
-  status: 'PENDING' | 'CONFIRMED' | 'FAILED';
+  status: "PENDING" | "CONFIRMED" | "FAILED";
   createdAt: string;
 };
 
@@ -25,164 +21,261 @@ export type SyncSummary = {
   failed: number;
 };
 
-// Ensure data directory exists
-function ensureDataDir() {
-  const dataDir = path.join(process.cwd(), 'data');
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+type PublicationRow = {
+  id: string;
+  title: string;
+  content_type: string;
+  canonicalized_content: string;
+  source_url: string | null;
+  publisher_wallet: string;
+  content_hash: string;
+  parent_hash: string | null;
+  tx_hash: string;
+  block_timestamp: Date | string;
+  status: Publication["status"];
+  created_at: Date | string;
+};
+
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function toTimestampMs(value: Date | string): number {
+  return value instanceof Date ? value.getTime() : new Date(value).getTime();
+}
+
+function mapPublicationRow(row: PublicationRow): Publication {
+  return {
+    id: row.id,
+    title: row.title,
+    contentType: row.content_type,
+    canonicalizedContent: row.canonicalized_content,
+    sourceUrl: row.source_url || undefined,
+    publisherWallet: row.publisher_wallet,
+    contentHash: row.content_hash,
+    parentHash: row.parent_hash || undefined,
+    txHash: row.tx_hash,
+    blockTimestamp: toIsoString(row.block_timestamp),
+    status: row.status,
+    createdAt: toIsoString(row.created_at),
+  };
+}
+
+export async function getPublications(): Promise<Publication[]> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications`
+  );
+
+  return result.rows.map(mapPublicationRow);
+}
+
+export async function getPublicationById(id: string): Promise<Publication | null> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE id = $1
+     LIMIT 1`,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
   }
+
+  return mapPublicationRow(result.rows[0]);
 }
 
-// Initialize database if it doesn't exist
-function initializeDb() {
-  ensureDataDir();
-  if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify({ publications: [] }, null, 2));
+export async function getPublicationByTxHash(txHash: string): Promise<Publication | null> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE LOWER(tx_hash) = LOWER($1)
+     LIMIT 1`,
+    [txHash]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
   }
+
+  return mapPublicationRow(result.rows[0]);
 }
 
-// Read all publications
-export function getPublications(): Publication[] {
-  initializeDb();
-  const data = fs.readFileSync(DB_PATH, 'utf-8');
-  return JSON.parse(data).publications;
+export async function getPublicationsByWallet(wallet: string): Promise<Publication[]> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE LOWER(publisher_wallet) = LOWER($1)`,
+    [wallet]
+  );
+
+  return result.rows.map(mapPublicationRow);
 }
 
-// Get publication by ID
-export function getPublicationById(id: string): Publication | null {
-  const publications = getPublications();
-  return publications.find(p => p.id === id) || null;
+export async function getPublicationsByHash(hash: string): Promise<Publication[]> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE LOWER(content_hash) = LOWER($1)`,
+    [hash]
+  );
+
+  return result.rows.map(mapPublicationRow);
 }
 
-export function getPublicationByTxHash(txHash: string): Publication | null {
-  const publications = getPublications();
-  return publications.find(p => p.txHash.toLowerCase() === txHash.toLowerCase()) || null;
+export async function addPublication(publication: Publication): Promise<void> {
+  await query(
+    `INSERT INTO publications (
+      id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+      tx_hash, block_timestamp, status, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      publication.id,
+      publication.title,
+      publication.contentType,
+      publication.canonicalizedContent,
+      publication.sourceUrl || null,
+      publication.publisherWallet,
+      publication.contentHash,
+      publication.parentHash || null,
+      publication.txHash,
+      publication.blockTimestamp,
+      publication.status,
+      publication.createdAt,
+    ]
+  );
 }
 
-// Get publications by wallet address
-export function getPublicationsByWallet(wallet: string): Publication[] {
-  const publications = getPublications();
-  return publications.filter(p => p.publisherWallet.toLowerCase() === wallet.toLowerCase());
+export async function updatePublicationStatus(
+  id: string,
+  status: Publication["status"],
+  txHash?: string
+): Promise<boolean> {
+  const result = await query(
+    `UPDATE publications
+     SET status = $2,
+         block_timestamp = NOW(),
+         tx_hash = COALESCE($3, tx_hash)
+     WHERE id = $1`,
+    [id, status, txHash || null]
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
-// Find publications by content hash
-export function getPublicationsByHash(hash: string): Publication[] {
-  const publications = getPublications();
-  return publications.filter(p => p.contentHash.toLowerCase() === hash.toLowerCase());
-}
-
-// Add new publication
-export function addPublication(publication: Publication): void {
-  initializeDb();
-  const publications = getPublications();
-  publications.push(publication);
-  fs.writeFileSync(DB_PATH, JSON.stringify({ publications }, null, 2));
-}
-
-// Update publication status
-export function updatePublicationStatus(id: string, status: Publication['status'], txHash?: string): boolean {
-  initializeDb();
-  const publications = getPublications();
-  const index = publications.findIndex(p => p.id === id);
-  
-  if (index === -1) return false;
-  
-  publications[index].status = status;
-  publications[index].blockTimestamp = new Date().toISOString();
-  if (txHash) {
-    publications[index].txHash = txHash;
-  }
-  
-  fs.writeFileSync(DB_PATH, JSON.stringify({ publications }, null, 2));
-  return true;
-}
-
-export function synchronizePendingPublications(confirmAfterMs = 45000): SyncSummary {
-  initializeDb();
-  const publications = getPublications();
-  const now = Date.now();
+export async function synchronizePendingPublications(confirmAfterMs = 45000): Promise<SyncSummary> {
+  const pendingResult = await query<PublicationRow>(
+    `SELECT id, tx_hash, created_at
+     FROM publications
+     WHERE status = 'PENDING'`
+  );
 
   let updated = 0;
   let confirmed = 0;
   let failed = 0;
+  const nowMs = Date.now();
 
-  const next = publications.map(publication => {
-    if (publication.status !== 'PENDING') {
-      return publication;
-    }
-
-    const ageMs = now - new Date(publication.createdAt).getTime();
+  for (const publication of pendingResult.rows) {
+    const ageMs = nowMs - toTimestampMs(publication.created_at);
     if (ageMs < confirmAfterMs) {
-      return publication;
+      continue;
     }
 
-    const lastNibble = publication.txHash.at(-1)?.toLowerCase() ?? '0';
-    const shouldFail = ['a', 'b', 'c', 'd', 'e', 'f'].includes(lastNibble);
-    const nextStatus: Publication['status'] = shouldFail ? 'FAILED' : 'CONFIRMED';
+    const lastNibble = publication.tx_hash.at(-1)?.toLowerCase() ?? "0";
+    const shouldFail = ["a", "b", "c", "d", "e", "f"].includes(lastNibble);
+    const nextStatus: Publication["status"] = shouldFail ? "FAILED" : "CONFIRMED";
+
+    await query(
+      `UPDATE publications
+       SET status = $2,
+           block_timestamp = NOW()
+       WHERE id = $1`,
+      [publication.id, nextStatus]
+    );
 
     updated += 1;
-    if (nextStatus === 'CONFIRMED') confirmed += 1;
-    if (nextStatus === 'FAILED') failed += 1;
-
-    return {
-      ...publication,
-      status: nextStatus,
-      blockTimestamp: new Date().toISOString(),
-    };
-  });
-
-  if (updated > 0) {
-    fs.writeFileSync(DB_PATH, JSON.stringify({ publications: next }, null, 2));
+    if (nextStatus === "CONFIRMED") confirmed += 1;
+    if (nextStatus === "FAILED") failed += 1;
   }
 
   return { updated, confirmed, failed };
 }
 
-// Get version chain (find children and parents)
-export function getVersionChain(contentHash: string): { parent: Publication | null; children: Publication[] } {
-  const publications = getPublications();
-  const parent = publications.find(p => p.contentHash === contentHash);
-  
-  if (!parent) {
+export async function getVersionChain(contentHash: string): Promise<{ parent: Publication | null; children: Publication[] }> {
+  const parent = await getPublicationsByHash(contentHash);
+  if (parent.length === 0) {
     return { parent: null, children: [] };
   }
-  
-  const children = publications.filter(p => p.parentHash === parent.contentHash);
-  
-  return { parent, children };
+
+  const childrenResult = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE LOWER(parent_hash) = LOWER($1)`,
+    [contentHash]
+  );
+
+  return {
+    parent: parent[0],
+    children: childrenResult.rows.map(mapPublicationRow),
+  };
 }
 
-// Get next version (child)
-export function getNextVersion(contentHash: string): Publication | null {
-  const publications = getPublications();
-  return publications.find(p => p.parentHash === contentHash) || null;
+export async function getNextVersion(contentHash: string): Promise<Publication | null> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE LOWER(parent_hash) = LOWER($1)
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [contentHash]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return mapPublicationRow(result.rows[0]);
 }
 
-// Get previous version (parent)
-export function getPreviousVersion(parentHash: string): Publication | null {
-  const publications = getPublications();
-  return publications.find(p => p.contentHash === parentHash) || null;
+export async function getPreviousVersion(parentHash: string): Promise<Publication | null> {
+  const result = await query<PublicationRow>(
+    `SELECT id, title, content_type, canonicalized_content, source_url, publisher_wallet, content_hash, parent_hash,
+            tx_hash, block_timestamp, status, created_at
+     FROM publications
+     WHERE LOWER(content_hash) = LOWER($1)
+     LIMIT 1`,
+    [parentHash]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return mapPublicationRow(result.rows[0]);
 }
 
-export function deletePublicationByIdAndWallet(id: string, wallet: string): {
+export async function deletePublicationByIdAndWallet(id: string, wallet: string): Promise<{
   deleted: boolean;
-  reason?: 'not-found' | 'forbidden';
-} {
-  initializeDb();
-  const publications = getPublications();
-  const index = publications.findIndex(p => p.id === id);
+  reason?: "not-found" | "forbidden";
+}> {
+  const publication = await getPublicationById(id);
 
-  if (index === -1) {
-    return { deleted: false, reason: 'not-found' };
+  if (!publication) {
+    return { deleted: false, reason: "not-found" };
   }
 
-  const publication = publications[index];
   if (publication.publisherWallet.toLowerCase() !== wallet.toLowerCase()) {
-    return { deleted: false, reason: 'forbidden' };
+    return { deleted: false, reason: "forbidden" };
   }
 
-  publications.splice(index, 1);
-  fs.writeFileSync(DB_PATH, JSON.stringify({ publications }, null, 2));
-
+  await query("DELETE FROM publications WHERE id = $1", [id]);
   return { deleted: true };
 }

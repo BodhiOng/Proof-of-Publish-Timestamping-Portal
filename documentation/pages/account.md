@@ -11,3 +11,4 @@
 
 - Uses framework-level redirect to `/connect-wallet`.
 - Exists as a convenience alias route rather than a separate UI page.
+- All wallet connection and profile CRUD operations are implemented in `/connect-wallet`.

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { Suspense } from "react";
 import ScrollToTopOnRouteChange from "./ScrollToTopOnRouteChange";
 import TopNav from "./TopNav";
 import "./globals.css";
@@ -41,7 +42,9 @@ export default function RootLayout({
             </div>
           </div>
         </header>
-        <ScrollToTopOnRouteChange />
+        <Suspense fallback={null}>
+          <ScrollToTopOnRouteChange />
+        </Suspense>
         {children}
       </body>
     </html>

@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Find all publications with this content hash
-    const matches = getPublicationsByHash(finalHash);
+    const matches = await getPublicationsByHash(finalHash);
 
     if (matches.length === 0) {
       return NextResponse.json({

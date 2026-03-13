@@ -11,8 +11,13 @@
 
 ## Notable Behaviors
 
-- Server-side pagination with page cache and next-page prefetch.
+- API-backed pagination with page cache and next-page prefetch.
 - Search and content-type filters.
 - Periodic sync refresh for updated publication states.
 - Bulk selection helpers and select mode management.
 - Proof export/download and clipboard helper utilities.
+
+## Data Source Notes
+
+- Reads publication records from backend API.
+- API is backed by local PostgreSQL storage in current implementation.

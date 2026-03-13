@@ -3,7 +3,7 @@ import { synchronizePendingPublications } from '@/lib/db';
 
 export async function POST() {
   try {
-    const result = synchronizePendingPublications();
+    const result = await synchronizePendingPublications();
     return NextResponse.json({
       message: 'Synchronization complete',
       ...result,

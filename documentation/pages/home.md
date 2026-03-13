@@ -14,3 +14,8 @@
 
 - Responsive layouts with separate mobile and desktop structures.
 - Mobile warning message indicates wallet-related limitations in mobile browsers.
+
+## Environment Context
+
+- Home page messaging assumes local development supports wallet + contract flows.
+- For local testing, backend persistence is PostgreSQL and chain interactions target local Hardhat deployment.

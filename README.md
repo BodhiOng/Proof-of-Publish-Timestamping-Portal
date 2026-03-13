@@ -1,28 +1,64 @@
-# Blockchain Assignment Part 2
+# Proof-of-Publish Timestamping Portal
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with TypeScript and Tailwind CSS.
+Next.js + React frontend with:
 
-## Getting Started
+- local PostgreSQL-backed API storage
+- local Hardhat blockchain deployment
+- frontend wallet flow that submits publication hashes to the Solidity contract
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20+
+- PostgreSQL running locally
+- MetaMask connected to local Hardhat network
+
+## 1. Install dependencies
+
+```bash
+npm install
+```
+
+## 2. Configure environment
+
+Copy `.env.example` to `.env.local` and update values:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/proof_publish
+NEXT_PUBLIC_PUBLICATION_REGISTRY_ADDRESS=0xYourDeployedContractAddress
+```
+
+Notes:
+
+- Tables are auto-created on first API access.
+- `NEXT_PUBLIC_PUBLICATION_REGISTRY_ADDRESS` must be the deployed `PublicationRegistry` contract address.
+
+## 3. Start local blockchain and deploy contract
+
+Terminal A:
+
+```bash
+npm run hardhat:node
+```
+
+Terminal B:
+
+```bash
+npm run hardhat:deploy:local
+```
+
+Take the deployed contract address from Terminal B and set it in `.env.local`.
+
+## 4. Run the app
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Objective Coverage
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new).
-
-Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Frontend in Next.js/React: implemented
+- Frontend linked to local database: implemented via PostgreSQL-backed API
+- Solidity deployed to local Hardhat node: implemented
+- Frontend linked to Solidity contract: implemented in publish flow (wallet signs/sends `registerPublication` transaction)

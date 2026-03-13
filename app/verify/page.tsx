@@ -59,7 +59,10 @@ function resolveMimeType(file: File): string {
 async function computeSha256Hex(bytes: Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
   if (subtle?.digest) {
-    const hashBuffer = await subtle.digest("SHA-256", bytes);
+    const digestInput: ArrayBuffer = bytes.buffer instanceof ArrayBuffer
+      ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      : Uint8Array.from(bytes).buffer;
+    const hashBuffer = await subtle.digest("SHA-256", digestInput);
     return Array.from(new Uint8Array(hashBuffer))
       .map((value) => value.toString(16).padStart(2, "0"))
       .join("");

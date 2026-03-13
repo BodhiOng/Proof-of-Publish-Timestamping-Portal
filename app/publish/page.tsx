@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { sha256 } from "ethers";
+import { Suspense, type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { BrowserProvider, Contract, ZeroHash, isAddress, sha256 } from "ethers";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWallet } from "@/hooks/useWallet";
+import { getPublicationRegistryAddress, PUBLICATION_REGISTRY_ABI } from "@/lib/publication-contract";
 import {
   canonicalizePublicationContent,
   createPublication,
@@ -180,7 +181,7 @@ function PublishingOverlay() {
   );
 }
 
-export default function PublishPage() {
+function PublishPageContent() {
   const { isConnected, address, isLoading } = useWallet();
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
@@ -572,6 +573,35 @@ export default function PublishPage() {
         throw new Error("Create and save your account profile before publishing.");
       }
 
+      if (typeof window === "undefined" || !window.ethereum) {
+        throw new Error("Wallet provider not found. Open this page in a wallet-enabled browser.");
+      }
+
+      const contractAddress = getPublicationRegistryAddress();
+      if (!isAddress(contractAddress)) {
+        throw new Error("NEXT_PUBLIC_PUBLICATION_REGISTRY_ADDRESS is not a valid address.");
+      }
+
+      const provider = new BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const signerAddress = (await signer.getAddress()).toLowerCase();
+      if (signerAddress !== address.toLowerCase()) {
+        throw new Error("Connected wallet does not match the selected publisher wallet.");
+      }
+
+      const contract = new Contract(contractAddress, PUBLICATION_REGISTRY_ABI, signer);
+      const normalizedParentHash = parentHash.trim() ? parentHash.trim().toLowerCase() : ZeroHash;
+
+      const tx = await contract.registerPublication(computedHash, contentType, normalizedParentHash);
+      setPublicationStatus("PENDING");
+      setTxHash(tx.hash);
+
+      const receipt = await tx.wait();
+      const block = receipt?.blockNumber ? await provider.getBlock(receipt.blockNumber) : null;
+      const chainTimestamp = block
+        ? new Date(Number(block.timestamp) * 1000).toISOString()
+        : new Date().toISOString();
+
       const data = await createPublication({
         title,
         contentType,
@@ -580,6 +610,8 @@ export default function PublishPage() {
         sourceUrl: sourceUrl || undefined,
         parentHash: parentHash || undefined,
         publisherWallet: address,
+        txHash: tx.hash,
+        blockTimestamp: chainTimestamp,
         status: "CONFIRMED",
       });
 
@@ -1750,5 +1782,13 @@ export default function PublishPage() {
 
       {showPublishingOverlay && <PublishingOverlay />}
     </main>
+  );
+}
+
+export default function PublishPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-black text-white" />}>
+      <PublishPageContent />
+    </Suspense>
   );
 }

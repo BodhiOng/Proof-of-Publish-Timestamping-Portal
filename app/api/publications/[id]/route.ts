@@ -9,7 +9,7 @@ export async function GET(
     const { id } = await params;
 
     // Fetch publication by ID
-    const publication = getPublicationById(id);
+    const publication = await getPublicationById(id);
 
     if (!publication) {
       return NextResponse.json(
@@ -23,13 +23,13 @@ export async function GET(
     let nextVersionId: string | null = null;
 
     if (publication.parentHash) {
-      const prevVersion = getPreviousVersion(publication.parentHash);
+      const prevVersion = await getPreviousVersion(publication.parentHash);
       if (prevVersion) {
         prevVersionId = prevVersion.id;
       }
     }
 
-    const nextVersion = getNextVersion(publication.contentHash);
+    const nextVersion = await getNextVersion(publication.contentHash);
     if (nextVersion) {
       nextVersionId = nextVersion.id;
     }
@@ -65,7 +65,7 @@ export async function DELETE(
       );
     }
 
-    const result = deletePublicationByIdAndWallet(id, wallet);
+    const result = await deletePublicationByIdAndWallet(id, wallet);
 
     if (!result.deleted && result.reason === 'not-found') {
       return NextResponse.json(

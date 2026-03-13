@@ -15,3 +15,8 @@
 - Shows verification matches including publication metadata where available.
 - Includes copy helpers for hashes and values.
 - Includes mobile-optimized layout.
+
+## Data Lookup Behavior
+
+- Verification checks publication hash matches through backend API.
+- Matching records include publication ID, publisher wallet, tx hash, timestamp, and status.
