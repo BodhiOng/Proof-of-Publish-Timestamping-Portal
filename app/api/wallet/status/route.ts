@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       },
       recommendations: {
         preferred: 'metamask',
-        warning: 'Wallet connection is required for all users. Backend signing is not available.',
+        warning: 'Wallet connection is required for all users.',
       },
     });
   } catch (error) {

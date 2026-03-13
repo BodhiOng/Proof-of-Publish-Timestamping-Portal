@@ -265,14 +265,6 @@ More content here...
               <code className="ml-1 rounded bg-gray-900 px-1">search</code>) and scoped to the connected wallet.
             </li>
             <li>• Publish requires canonicalized preview before signing/registering a publication.</li>
-            <li>
-              • For large dashboard tests, seed data with
-              <code className="ml-1 rounded bg-gray-900 px-1">cmd /c npm run seed -- --target 100</code>.
-            </li>
-            <li>
-              • To test one wallet reaching a target count, use
-              <code className="ml-1 rounded bg-gray-900 px-1">--wallet 0x...</code> with the seed command.
-            </li>
           </ul>
         </div>
 
