@@ -34,7 +34,7 @@ Notes:
 
 ## 4. Prepare Local Database
 
-Ensure database `proof_publish` exists in PostgreSQL.
+Ensure database `proof_publish` exists in PostgreSQL. Use pgAdmin to create it. Take note of all of the sensitive informations mentioned in Env's DATABASE_URL
 
 The app auto-creates required tables on first API access.
 
